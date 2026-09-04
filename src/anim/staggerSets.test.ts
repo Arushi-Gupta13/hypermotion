@@ -557,6 +557,82 @@ describe('stagger property keyframe sets', () => {
     expect(times(api, layers[2]!, 'transform.x')).toEqual([0.2, 3.2])
   })
 
+  it('authors, stamps, and retimes bend properties as one stagger set', () => {
+    const { api, layers, options } = setup()
+    const angleTargets: StaggerPropertyTarget[] = layers.map(
+      (nodeId, index) => ({
+        nodeId,
+        currentValue: index * 30,
+      }),
+    )
+    const directionTargets: StaggerPropertyTarget[] = layers.map(
+      (nodeId, index) => ({
+        nodeId,
+        currentValue: index * 0.25,
+      }),
+    )
+
+    toggleStaggerSetPropertyKeyframes(
+      api,
+      angleTargets,
+      'deformation.bend.angle',
+      1,
+      options,
+    )
+    toggleStaggerSetPropertyKeyframes(
+      api,
+      directionTargets,
+      'deformation.bend.captureDirectionX',
+      1,
+      options,
+    )
+    const stampedTrackIds = stampStaggerSetPatch(
+      api,
+      3,
+      'deformation',
+      { angle: 120, captureDirectionX: 0.75 },
+      'active-track',
+      options,
+    )
+
+    expect(stampedTrackIds).toHaveLength(6)
+    expect(times(api, layers[0]!, 'deformation.bend.angle')).toEqual([1, 3])
+    expect(times(api, layers[1]!, 'deformation.bend.angle')).toEqual([
+      1.1, 3.1,
+    ])
+    expect(times(api, layers[2]!, 'deformation.bend.angle')).toEqual([
+      1.2, 3.2,
+    ])
+    expect(
+      findTrack(api, layers[2]!, 'deformation.bend.angle')?.keyframes.at(-1)
+        ?.value,
+    ).toBe(120)
+    expect(
+      findTrack(
+        api,
+        layers[1]!,
+        'deformation.bend.captureDirectionX',
+      )?.keyframes.at(-1)?.value,
+    ).toBe(0.75)
+    expect(
+      new Set(staggerSetPropertyIds(api.getUiState().staggerSets['set-1'])),
+    ).toEqual(
+      new Set([
+        'deformation.bend.angle',
+        'deformation.bend.captureDirectionX',
+      ]),
+    )
+
+    expect(retimeStaggerSet(api, 'set-1', 0.25)).toBe(true)
+    expect(times(api, layers[0]!, 'deformation.bend.angle')).toEqual([1, 3])
+    expect(times(api, layers[1]!, 'deformation.bend.angle')).toEqual([
+      1.25, 3.25,
+    ])
+    expect(times(api, layers[2]!, 'deformation.bend.angle')).toEqual([
+      1.5, 3.5,
+    ])
+  })
+
   it('retimes only set members when delay changes', () => {
     const { api, layers, targets, options } = setup()
     toggleStaggerSetPropertyKeyframes(
