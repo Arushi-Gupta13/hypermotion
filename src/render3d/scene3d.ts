@@ -321,6 +321,7 @@ export function createPlaneBuildContext(api: SceneAPI): PlaneBuildContext {
       const childRenderMode = child.transform.renderMode ?? 'flat'
       if (
         segmentTextNodeIds.has(childId) ||
+        layerHasBendDeformation(child) ||
         isAlwaysOnTopNode(child) ||
         childRenderMode === 'plane' ||
         childRenderMode === 'group3d' ||
@@ -367,6 +368,7 @@ export function createPlaneBuildContext(api: SceneAPI): PlaneBuildContext {
       const renderMode = child.transform.renderMode ?? 'flat'
       if (
         child.kind === 'video' ||
+        layerHasBendDeformation(child) ||
         isAlwaysOnTopNode(child) ||
         renderMode === 'plane' ||
         renderMode === 'group3d' ||
@@ -940,7 +942,11 @@ export function buildWorldPlanes(
     const isRootChild = node.parent === rootId
     const independentNodes = options.independentNodes ?? false
     const isRequestedNode = !targetNodeIds || targetNodeIds.has(id)
-    const segmentText = segmentTextNodeIds.has(id)
+    const deformedNode = layerHasBendDeformation(node)
+    // A bent text layer is rasterized as one subdivided texture plane. The
+    // normal segment-text mesh stores world-space glyph vertices, while bend
+    // capture controls are intentionally layer-local.
+    const segmentText = segmentTextNodeIds.has(id) && !deformedNode
     const videoStackSibling = !!parent && hasDirectVideoChild(parent)
     const segmentStackSibling = !!parent && hasDirectSegmentTextChild(parent)
     const splitsSegmentStack = hasDirectSegmentTextChild(node)
@@ -949,6 +955,7 @@ export function buildWorldPlanes(
       isRequestedNode &&
       !isRoot &&
       (segmentText ||
+        deformedNode ||
         isAlwaysOnTopNode(node) ||
         independentNodes ||
         videoStackSibling ||
@@ -1115,6 +1122,10 @@ export function buildWorldPlanes(
     )
   }
   return planes
+}
+
+function layerHasBendDeformation(node: Node): boolean {
+  return node.deformation?.kind === 'bend' && node.deformation.enabled
 }
 
 function unionRects(a: Rect, b: Rect): Rect {

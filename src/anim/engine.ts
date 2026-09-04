@@ -120,6 +120,21 @@ export interface AnimatedValue {
   textAnimation?: TextAnimationConfig
   /** 0→1 progress for a generic layer motion path. */
   motionPathProgress?: number
+  bendAngle?: number
+  bendFactor?: number
+  bendCaptureDirectionX?: number
+  bendCaptureDirectionY?: number
+  bendCaptureDirectionZ?: number
+  bendCaptureRotation?: number
+  bendUpDirectionX?: number
+  bendUpDirectionY?: number
+  bendUpDirectionZ?: number
+  bendUpRotation?: number
+  bendRotation?: number
+  bendCaptureOriginX?: number
+  bendCaptureOriginY?: number
+  bendCaptureOriginZ?: number
+  bendCaptureLength?: number
   /** Discrete component selection evaluated from a semantic variant track. */
   variant?: VariantSelection
   focusDistance?: number
@@ -812,6 +827,51 @@ function writeProperty(
       break
     case 'motionPath.progress':
       into.motionPathProgress = value
+      break
+    case 'deformation.bend.angle':
+      into.bendAngle = value
+      break
+    case 'deformation.bend.factor':
+      into.bendFactor = value
+      break
+    case 'deformation.bend.captureDirectionX':
+      into.bendCaptureDirectionX = value
+      break
+    case 'deformation.bend.captureDirectionY':
+      into.bendCaptureDirectionY = value
+      break
+    case 'deformation.bend.captureDirectionZ':
+      into.bendCaptureDirectionZ = value
+      break
+    case 'deformation.bend.captureRotation':
+      into.bendCaptureRotation = value
+      break
+    case 'deformation.bend.upDirectionX':
+      into.bendUpDirectionX = value
+      break
+    case 'deformation.bend.upDirectionY':
+      into.bendUpDirectionY = value
+      break
+    case 'deformation.bend.upDirectionZ':
+      into.bendUpDirectionZ = value
+      break
+    case 'deformation.bend.upRotation':
+      into.bendUpRotation = value
+      break
+    case 'deformation.bend.bendRotation':
+      into.bendRotation = value
+      break
+    case 'deformation.bend.captureOriginX':
+      into.bendCaptureOriginX = value
+      break
+    case 'deformation.bend.captureOriginY':
+      into.bendCaptureOriginY = value
+      break
+    case 'deformation.bend.captureOriginZ':
+      into.bendCaptureOriginZ = value
+      break
+    case 'deformation.bend.captureLength':
+      into.bendCaptureLength = Math.max(0, value)
       break
     case 'camera.focusDistance':
       into.focusDistance = value

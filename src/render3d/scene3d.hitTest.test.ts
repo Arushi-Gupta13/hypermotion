@@ -7,6 +7,7 @@ import {
 } from '@/anim/textAnimations'
 import { defaultTextMotionPath } from '@/anim/textMotionPath'
 import { createSceneAPI } from '@/scene/doc'
+import { DEFAULT_BEND_DEFORMATION } from '@/scene/deformation'
 import type { SolvedLayout } from '@/layout'
 import {
   buildWorldPlanes,
@@ -18,6 +19,41 @@ import {
 } from '@/render3d/scene3d'
 
 describe('direct nested-layer hit testing', () => {
+  it('promotes a bent nested frame to a subtree plane', () => {
+    const api = createSceneAPI()
+    const rootId = api.createNode('frame', null, {
+      size: { width: 960, height: 540 },
+    })
+    const parentId = api.createNode('frame', rootId, {
+      size: { width: 400, height: 240 },
+    })
+    const bentId = api.createNode('frame', parentId, {
+      size: { width: 240, height: 120 },
+      deformation: { ...DEFAULT_BEND_DEFORMATION, angle: 60 },
+    })
+    const childId = api.createNode('rect', bentId, {
+      size: { width: 80, height: 40 },
+    })
+    const layout: SolvedLayout = {
+      [rootId]: { x: 0, y: 0, width: 960, height: 540 },
+      [parentId]: { x: 100, y: 100, width: 400, height: 240 },
+      [bentId]: { x: 140, y: 140, width: 240, height: 120 },
+      [childId]: { x: 160, y: 160, width: 80, height: 40 },
+    }
+    const camera = api.getActiveCamera()
+    if (!camera) throw new Error('Expected the default camera')
+    const resolvedCamera = resolveCamera3D(camera, undefined, {
+      width: 960,
+      height: 540,
+    })
+
+    const planes = buildWorldPlanes(api, layout, {}, resolvedCamera)
+    expect(planes.map((plane) => plane.nodeId)).toEqual([parentId, bentId])
+    expect(planes.find((plane) => plane.nodeId === bentId)?.contentMode).toBe(
+      'subtree',
+    )
+  })
+
   it('expands flattened camera planes and hits the nested child', () => {
     const api = createSceneAPI()
     const rootId = api.createNode('frame', null, {

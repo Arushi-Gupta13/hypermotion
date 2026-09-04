@@ -44,6 +44,12 @@ export {
   effectStableId,
   normalizeLayerEffects,
 } from './effects'
+export {
+  DEFAULT_BEND_DEFORMATION,
+  MAX_BEND_GEOMETRY_DETAIL,
+  MIN_BEND_GEOMETRY_DETAIL,
+  normalizeLayerDeformation,
+} from './deformation'
 // `apiReady` is the module-scope singleton — a Promise<SceneAPI> that
 // resolves once IndexedDB has hydrated the doc. Exposed for non-React
 // callers (the headless export driver) that need the API without going

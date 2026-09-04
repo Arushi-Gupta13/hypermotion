@@ -29,6 +29,22 @@ export interface PlaneDepthOfFieldShaderState {
   bladeCount: number
   bladeRotation: number
   bokehRatio: number
+  bend?: PlaneBendShaderState | null
+}
+
+export interface PlaneBendShaderState {
+  enabled: boolean
+  angle: number
+  factor: number
+  bothDirections: boolean
+  limitToRegion: boolean
+  captureDirection: { x: number; y: number; z: number }
+  captureRotation: number
+  upDirection: { x: number; y: number; z: number }
+  upRotation: number
+  bendRotation: number
+  captureOrigin: { x: number; y: number; z: number }
+  resolvedLength: number
 }
 
 interface DofShaderUniforms {
@@ -44,9 +60,21 @@ interface DofShaderUniforms {
   hmSampleCount: { value: number }
   hmApertureStretch: { value: number }
   hmDofKernel: { value: THREE.Vector2[] }
+  hmBendEnabled: { value: number }
+  hmBendAngle: { value: number }
+  hmBendFactor: { value: number }
+  hmBendBothDirections: { value: number }
+  hmBendLimitToRegion: { value: number }
+  hmBendCaptureDirection: { value: THREE.Vector3 }
+  hmBendCaptureRotation: { value: number }
+  hmBendUpDirection: { value: THREE.Vector3 }
+  hmBendUpRotation: { value: number }
+  hmBendRotation: { value: number }
+  hmBendCaptureOrigin: { value: THREE.Vector3 }
+  hmBendCaptureLength: { value: number }
 }
 
-const DOF_SHADER_KEY = 'hypermotion-gpu-dof-v10'
+const DOF_SHADER_KEY = 'hypermotion-gpu-dof-bend-v11'
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5))
 const kernelCache = new Map<string, THREE.Vector2[]>()
 
@@ -160,11 +188,32 @@ export function installDepthOfFieldShader(material: THREE.MeshBasicMaterial) {
     hmDofKernel: {
       value: apertureKernelVectors(7, 0, 1, 1),
     },
+    hmBendEnabled: { value: 0 },
+    hmBendAngle: { value: 0 },
+    hmBendFactor: { value: 1 },
+    hmBendBothDirections: { value: 0 },
+    hmBendLimitToRegion: { value: 1 },
+    hmBendCaptureDirection: { value: new THREE.Vector3(1, 0, 0) },
+    hmBendCaptureRotation: { value: 0 },
+    hmBendUpDirection: { value: new THREE.Vector3(0, 1, 0) },
+    hmBendUpRotation: { value: 0 },
+    hmBendRotation: { value: 0 },
+    hmBendCaptureOrigin: { value: new THREE.Vector3() },
+    hmBendCaptureLength: { value: 1 },
   }
   material.userData.hyperMotionDofShaderKey = DOF_SHADER_KEY
   material.userData.hyperMotionDofUniforms = uniforms
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms)
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        'void main() {',
+        `${BEND_VERTEX_DECLARATIONS}\nvoid main() {`,
+      )
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>\ntransformed = hmApplyBend(transformed);`,
+      )
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <map_pars_fragment>',
@@ -290,6 +339,18 @@ function hasCurrentUniformSchema(value: unknown): value is DofShaderUniforms {
     'hmSampleCount',
     'hmApertureStretch',
     'hmDofKernel',
+    'hmBendEnabled',
+    'hmBendAngle',
+    'hmBendFactor',
+    'hmBendBothDirections',
+    'hmBendLimitToRegion',
+    'hmBendCaptureDirection',
+    'hmBendCaptureRotation',
+    'hmBendUpDirection',
+    'hmBendUpRotation',
+    'hmBendRotation',
+    'hmBendCaptureOrigin',
+    'hmBendCaptureLength',
   ].every((key) => uniforms[key as keyof DofShaderUniforms] != null)
 }
 
@@ -334,7 +395,130 @@ export function updateDepthOfFieldShader(
     state.bokehRatio,
     sampleCount,
   )
+  const bend = state.bend
+  uniforms.hmBendEnabled.value = bend?.enabled ? 1 : 0
+  uniforms.hmBendAngle.value = THREE.MathUtils.degToRad(bend?.angle ?? 0)
+  uniforms.hmBendFactor.value = clamp(bend?.factor ?? 0, 0, 1)
+  uniforms.hmBendBothDirections.value = bend?.bothDirections ? 1 : 0
+  uniforms.hmBendLimitToRegion.value = bend?.limitToRegion ? 1 : 0
+  uniforms.hmBendCaptureDirection.value.set(
+    bend?.captureDirection.x ?? 1,
+    bend?.captureDirection.y ?? 0,
+    bend?.captureDirection.z ?? 0,
+  )
+  uniforms.hmBendCaptureRotation.value = THREE.MathUtils.degToRad(
+    bend?.captureRotation ?? 0,
+  )
+  uniforms.hmBendUpDirection.value.set(
+    bend?.upDirection.x ?? 0,
+    bend?.upDirection.y ?? 1,
+    bend?.upDirection.z ?? 0,
+  )
+  uniforms.hmBendUpRotation.value = THREE.MathUtils.degToRad(
+    bend?.upRotation ?? 0,
+  )
+  uniforms.hmBendRotation.value = THREE.MathUtils.degToRad(
+    bend?.bendRotation ?? 0,
+  )
+  uniforms.hmBendCaptureOrigin.value.set(
+    bend?.captureOrigin.x ?? 0,
+    bend?.captureOrigin.y ?? 0,
+    bend?.captureOrigin.z ?? 0,
+  )
+  uniforms.hmBendCaptureLength.value = Math.max(0.0001, bend?.resolvedLength ?? 1)
 }
+
+const BEND_VERTEX_DECLARATIONS = `
+uniform float hmBendEnabled;
+uniform float hmBendAngle;
+uniform float hmBendFactor;
+uniform float hmBendBothDirections;
+uniform float hmBendLimitToRegion;
+uniform vec3 hmBendCaptureDirection;
+uniform float hmBendCaptureRotation;
+uniform vec3 hmBendUpDirection;
+uniform float hmBendUpRotation;
+uniform float hmBendRotation;
+uniform vec3 hmBendCaptureOrigin;
+uniform float hmBendCaptureLength;
+
+vec3 hmSafeNormalize(vec3 value, vec3 fallbackValue) {
+  float magnitude = length(value);
+  return magnitude > 0.00001 ? value / magnitude : fallbackValue;
+}
+
+vec3 hmRotateAroundAxis(vec3 value, vec3 axisValue, float angle) {
+  vec3 axis = hmSafeNormalize(axisValue, vec3(0.0, 0.0, 1.0));
+  float cosine = cos(angle);
+  float sine = sin(angle);
+  return value * cosine + cross(axis, value) * sine +
+    axis * dot(axis, value) * (1.0 - cosine);
+}
+
+vec2 hmBendArc(float q, float height, float start, float curvature) {
+  float theta = curvature * q;
+  float radius = 1.0 / curvature;
+  return vec2(
+    start + sin(theta) * (radius - height),
+    (1.0 - cos(theta)) * radius + cos(theta) * height
+  );
+}
+
+vec3 hmApplyBend(vec3 originalPoint) {
+  if (
+    hmBendEnabled < 0.5 ||
+    abs(hmBendAngle) < 0.000001 ||
+    hmBendFactor <= 0.0
+  ) return originalPoint;
+
+  vec3 localZ = vec3(0.0, 0.0, 1.0);
+  vec3 capture = hmSafeNormalize(hmBendCaptureDirection, vec3(1.0, 0.0, 0.0));
+  capture = hmRotateAroundAxis(capture, localZ, hmBendCaptureRotation);
+  vec3 up = hmRotateAroundAxis(hmBendUpDirection, localZ, hmBendUpRotation);
+  up -= capture * dot(up, capture);
+  if (length(up) < 0.00001) {
+    vec3 fallbackUp = abs(capture.z) < 0.9 ? localZ : vec3(0.0, 1.0, 0.0);
+    up = fallbackUp - capture * dot(fallbackUp, capture);
+  }
+  up = hmSafeNormalize(up, vec3(0.0, 1.0, 0.0));
+  vec3 across = hmSafeNormalize(cross(capture, up), localZ);
+  up = hmSafeNormalize(cross(across, capture), up);
+
+  vec3 relative = originalPoint - hmBendCaptureOrigin;
+  float along = dot(relative, capture);
+  float height = dot(relative, up);
+  float acrossAmount = dot(relative, across);
+  float captureLength = max(hmBendCaptureLength, 0.0001);
+  float start = hmBendBothDirections > 0.5 ? -captureLength * 0.5 : 0.0;
+  float q = along - start;
+  float curvature = hmBendAngle / captureLength;
+  vec2 bent;
+  if (
+    hmBendLimitToRegion < 0.5 ||
+    (q >= 0.0 && q <= captureLength)
+  ) {
+    bent = hmBendArc(q, height, start, curvature);
+  } else {
+    float endpointQ = q < 0.0 ? 0.0 : captureLength;
+    vec2 endpoint = hmBendArc(endpointQ, 0.0, start, curvature);
+    float theta = curvature * endpointQ;
+    vec2 tangent = vec2(cos(theta), sin(theta));
+    vec2 normal = vec2(-sin(theta), cos(theta));
+    float extension = q - endpointQ;
+    bent = endpoint + tangent * extension + normal * height;
+  }
+  vec3 deformed = hmBendCaptureOrigin +
+    capture * bent.x + up * bent.y + across * acrossAmount;
+  if (abs(hmBendRotation) > 0.000001) {
+    deformed = hmBendCaptureOrigin + hmRotateAroundAxis(
+      deformed - hmBendCaptureOrigin,
+      capture,
+      hmBendRotation
+    );
+  }
+  return mix(originalPoint, deformed, clamp(hmBendFactor, 0.0, 1.0));
+}
+`
 
 function apertureKernelVectors(
   bladeCount: number,

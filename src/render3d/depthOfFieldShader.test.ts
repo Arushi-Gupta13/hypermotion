@@ -179,6 +179,56 @@ describe('GPU depth-of-field policy', () => {
     expect(uniforms.hmScreenPixelRatio.value).toBe(2)
   })
 
+  it('injects and updates the shared GPU bend vertex deformation', () => {
+    const material = new THREE.MeshBasicMaterial()
+    updateDepthOfFieldShader(material, {
+      enabled: false,
+      blurPx: 0,
+      minimumBlurPx: 0,
+      planeWidth: 400,
+      planeHeight: 240,
+      focusMask: false,
+      focusX: 0,
+      focusY: 0,
+      focusRadius: 0,
+      focusFalloff: 1,
+      screenPixelRatio: 1,
+      sampleCount: 6,
+      bladeCount: 7,
+      bladeRotation: 0,
+      bokehRatio: 1,
+      bend: {
+        enabled: true,
+        angle: 90,
+        factor: 0.75,
+        bothDirections: true,
+        limitToRegion: true,
+        captureDirection: { x: 1, y: 0, z: 0 },
+        captureRotation: 15,
+        upDirection: { x: 0, y: 1, z: 0 },
+        upRotation: 5,
+        bendRotation: 20,
+        captureOrigin: { x: 12, y: 24, z: 0 },
+        resolvedLength: 320,
+      },
+    })
+    const shader = {
+      uniforms: {},
+      vertexShader: 'void main() {\n#include <begin_vertex>\n}',
+      fragmentShader:
+        '#include <map_pars_fragment>\nvoid main(){\n#include <map_fragment>\n}',
+    }
+    material.onBeforeCompile(shader as never, {} as never)
+
+    expect(shader.vertexShader).toContain('vec3 hmApplyBend')
+    expect(shader.vertexShader).toContain('transformed = hmApplyBend(transformed)')
+    const uniforms = material.userData.hyperMotionDofUniforms
+    expect(uniforms.hmBendEnabled.value).toBe(1)
+    expect(uniforms.hmBendAngle.value).toBeCloseTo(Math.PI / 2)
+    expect(uniforms.hmBendFactor.value).toBe(0.75)
+    expect(uniforms.hmBendCaptureLength.value).toBe(320)
+  })
+
   it('reinstalls uniforms after Fast Refresh leaves an older shader schema', () => {
     const material = new THREE.MeshBasicMaterial()
     material.userData.hyperMotionDofShaderKey = 'hypermotion-gpu-dof-v2'

@@ -64,6 +64,21 @@ export interface AnimatedValue {
   textTimelineProgress?: number
   textAnimation?: TextAnimationConfig
   motionPathProgress?: number
+  bendAngle?: number
+  bendFactor?: number
+  bendCaptureDirectionX?: number
+  bendCaptureDirectionY?: number
+  bendCaptureDirectionZ?: number
+  bendCaptureRotation?: number
+  bendUpDirectionX?: number
+  bendUpDirectionY?: number
+  bendUpDirectionZ?: number
+  bendUpRotation?: number
+  bendRotation?: number
+  bendCaptureOriginX?: number
+  bendCaptureOriginY?: number
+  bendCaptureOriginZ?: number
+  bendCaptureLength?: number
   /** Discrete component selection evaluated from a semantic variant track. */
   variant?: VariantSelection
   focusDistance?: number

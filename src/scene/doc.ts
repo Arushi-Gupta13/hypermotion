@@ -10,6 +10,7 @@ import type {
   ImageNode,
   Keyframe,
   Layout,
+  LayerDeformation,
   Node,
   NodeId,
   NodeKind,
@@ -51,6 +52,7 @@ import { migrateCursorComponents } from '@/scene/builtins/migrateCursorComponent
 import { normalizeLayerEffects } from '@/scene/effects'
 import { normalizeEllipseArc } from '@/scene/ellipseArc'
 import { normalizeLayerZIndex } from '@/scene/zIndex'
+import { normalizeLayerDeformation } from '@/scene/deformation'
 
 /**
  * Persistent, undoable UI state — track groups, keyframe groups,
@@ -244,6 +246,7 @@ export interface NodeBaseMutable {
   zIndex: number
   isMask: boolean
   motionPath: LayerMotionPath | null
+  deformation: LayerDeformation | null
   text: string
   fontFamily: string
   fontSize: number
@@ -671,6 +674,7 @@ export function createSceneAPI(doc: Y.Doc = new Y.Doc()): SceneAPI {
         (y.get('componentSourceId') as NodeId | null | undefined) ?? null,
       workspaceOnly: (y.get('workspaceOnly') as boolean | undefined) ?? false,
       motionPath: normalizeLayerMotionPath(y.get('motionPath')),
+      deformation: normalizeLayerDeformation(y.get('deformation')),
     }
     switch (kind) {
       case 'frame':
@@ -1208,6 +1212,12 @@ export function createSceneAPI(doc: Y.Doc = new Y.Doc()): SceneAPI {
             (props as { motionPath?: LayerMotionPath | null })?.motionPath,
           ),
         )
+        y.set(
+          'deformation',
+          normalizeLayerDeformation(
+            (props as { deformation?: LayerDeformation | null })?.deformation,
+          ),
+        )
 
         // kind-specific defaults
         if (kind === 'frame' || kind === 'component') {
@@ -1568,6 +1578,10 @@ export function createSceneAPI(doc: Y.Doc = new Y.Doc()): SceneAPI {
         }
         if (key === 'motionPath') {
           y.set('motionPath', normalizeLayerMotionPath(value))
+          return
+        }
+        if (key === 'deformation') {
+          y.set('deformation', normalizeLayerDeformation(value))
           return
         }
         if (key === 'zIndex') {

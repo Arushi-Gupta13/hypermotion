@@ -256,6 +256,8 @@ export interface NodeJson {
   workspaceOnly?: boolean
   /** Optional pixel-space Bézier rail followed by this layer. */
   motionPath?: LayerMotionPathJson | null
+  /** Optional non-destructive layer deformation. */
+  deformation?: LayerDeformationJson | null
   transform?: {
     x: number
     y: number
@@ -477,6 +479,33 @@ export interface LayerMotionPathJson extends TextMotionPathJson {
   parameterization?: 'parametric' | 'arc-length'
 }
 
+export interface DeformationVector3Json {
+  x: number
+  y: number
+  z: number
+}
+
+export interface BendDeformationJson {
+  kind: 'bend'
+  enabled?: boolean
+  angle?: number
+  factor?: number
+  showOriginalGeometry?: boolean
+  bothDirections?: boolean
+  limitToRegion?: boolean
+  captureDirection?: Partial<DeformationVector3Json>
+  captureRotation?: number
+  upDirection?: Partial<DeformationVector3Json>
+  upRotation?: number
+  bendRotation?: number
+  captureOrigin?: Partial<DeformationVector3Json>
+  /** A value of 0 automatically fits the layer bounds. */
+  captureLength?: number
+  geometryDetail?: number
+}
+
+export type LayerDeformationJson = BendDeformationJson
+
 const MAX_LAYER_MOTION_PATH_POINTS = 64
 const MAX_LAYER_MOTION_PATH_COORDINATE = 1_000_000
 
@@ -554,6 +583,21 @@ export const PROPERTY_IDS = [
   'shape.arcInnerRadius',
   'text.progress',
   'motionPath.progress',
+  'deformation.bend.angle',
+  'deformation.bend.factor',
+  'deformation.bend.captureDirectionX',
+  'deformation.bend.captureDirectionY',
+  'deformation.bend.captureDirectionZ',
+  'deformation.bend.captureRotation',
+  'deformation.bend.upDirectionX',
+  'deformation.bend.upDirectionY',
+  'deformation.bend.upDirectionZ',
+  'deformation.bend.upRotation',
+  'deformation.bend.bendRotation',
+  'deformation.bend.captureOriginX',
+  'deformation.bend.captureOriginY',
+  'deformation.bend.captureOriginZ',
+  'deformation.bend.captureLength',
   'layout.gap',
   'layout.padding.top',
   'layout.padding.right',
@@ -1283,6 +1327,9 @@ export function buildSceneBytes(json: SceneJson): Uint8Array {
     if (node.motionPath !== undefined) {
       y.set('motionPath', node.motionPath)
     }
+    if (node.deformation !== undefined) {
+      y.set('deformation', node.deformation)
+    }
 
     // kind-specific fields
     if (node.kind === 'frame' || node.kind === 'component') {
@@ -1752,6 +1799,7 @@ export function validateScene(bytes: Uint8Array): SceneValidationResult {
       )
     }
     validateLayerMotionPath(id, node, root, errors)
+    validateLayerDeformation(id, node, root, errors)
     const parent = typeof node.parent === 'string' ? node.parent : null
     if (node.parent !== undefined && node.parent !== null && typeof node.parent !== 'string') {
       errors.push(`node ${id} parent must be a string or null`)
@@ -2683,6 +2731,94 @@ function validateLayerMotionPath(
   }
 }
 
+function validateLayerDeformation(
+  nodeId: string,
+  node: Record<string, unknown>,
+  rootId: string,
+  errors: string[],
+): void {
+  const raw = node.deformation
+  if (raw === undefined || raw === null) return
+  const label = `node ${nodeId} deformation`
+  if (nodeId === rootId || node.kind === 'camera' || node.kind === 'audio') {
+    errors.push(`${label} is only supported on non-root visual layers`)
+    return
+  }
+  if (!isPlainObject(raw)) {
+    errors.push(`${label} must be an object or null`)
+    return
+  }
+  if (raw.kind !== 'bend') {
+    errors.push(`${label}.kind must be bend`)
+    return
+  }
+  const bend = raw
+  const finite = (key: string): void => {
+    const value = bend[key]
+    if (
+      value !== undefined &&
+      (typeof value !== 'number' || !Number.isFinite(value))
+    ) {
+      errors.push(`${label}.${key} must be a finite number`)
+    }
+  }
+  for (const key of [
+    'angle',
+    'factor',
+    'captureRotation',
+    'upRotation',
+    'bendRotation',
+    'captureLength',
+    'geometryDetail',
+  ]) finite(key)
+  for (const key of [
+    'enabled',
+    'showOriginalGeometry',
+    'bothDirections',
+    'limitToRegion',
+  ]) {
+    if (bend[key] !== undefined && typeof bend[key] !== 'boolean') {
+      errors.push(`${label}.${key} must be a boolean`)
+    }
+  }
+  for (const key of ['captureDirection', 'upDirection', 'captureOrigin']) {
+    const value = bend[key]
+    if (value === undefined) continue
+    if (!isPlainObject(value)) {
+      errors.push(`${label}.${key} must be an x/y/z object`)
+      continue
+    }
+    for (const axis of ['x', 'y', 'z']) {
+      const component = value[axis]
+      if (
+        component !== undefined &&
+        (typeof component !== 'number' || !Number.isFinite(component))
+      ) {
+        errors.push(`${label}.${key}.${axis} must be a finite number`)
+      }
+    }
+  }
+  if (typeof bend.factor === 'number' && (bend.factor < 0 || bend.factor > 1)) {
+    errors.push(`${label}.factor must be between 0 and 1`)
+  }
+  if (typeof bend.angle === 'number' && (bend.angle < -360 || bend.angle > 360)) {
+    errors.push(`${label}.angle must be between -360 and 360`)
+  }
+  if (typeof bend.captureLength === 'number' && bend.captureLength < 0) {
+    errors.push(`${label}.captureLength must be at least 0`)
+  }
+  if (
+    typeof bend.geometryDetail === 'number' &&
+    (!Number.isInteger(bend.geometryDetail) ||
+      bend.geometryDetail < 4 ||
+      bend.geometryDetail > 128)
+  ) {
+    errors.push(
+      `${label}.geometryDetail must be an integer between 4 and 128`,
+    )
+  }
+}
+
 function isJsonValue(value: unknown): value is JsonValue {
   if (value === null) return true
   if (typeof value === 'string' || typeof value === 'boolean') return true
@@ -2850,6 +2986,8 @@ function nodeToYMap(node: NodeJson, meta: SceneMeta = DEFAULT_META): Y.Map<unkno
     'isMask',
     'componentSourceId',
     'workspaceOnly',
+    'motionPath',
+    'deformation',
   ])
   y.set('id', node.id)
   y.set('kind', node.kind)
@@ -2874,6 +3012,10 @@ function nodeToYMap(node: NodeJson, meta: SceneMeta = DEFAULT_META): Y.Map<unkno
   y.set('isMask', node.isMask ?? false)
   y.set('componentSourceId', node.componentSourceId ?? null)
   y.set('workspaceOnly', node.workspaceOnly ?? false)
+  if (node.motionPath !== undefined) y.set('motionPath', node.motionPath)
+  if (node.deformation !== undefined) {
+    y.set('deformation', node.deformation)
+  }
   if (node.kind === 'text') {
     for (const key of [
       'size',
