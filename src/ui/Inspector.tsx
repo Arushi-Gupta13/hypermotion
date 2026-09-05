@@ -174,16 +174,17 @@ import { TextMotionPathEditor } from '@/ui/TextMotionPathEditor'
 import { isCursorInstance } from '@/scene/builtins/cursorComponent'
 import {
   addKeyframe,
+  clearBendAnimation,
   findKeyframeAt,
   findTrack,
   getAnimEngine,
   recordKeyframesForPatch,
   removeTrack,
+  resetBendNodes,
   stampToActiveTracksForPatch,
   toggleKeyframe,
 } from '@/anim'
 import {
-  pruneStaggerMembershipForRemovedKeyframe,
   staggerLayerOffset,
   stampStaggerSetPatch,
 } from '@/anim/staggerSets'
@@ -1992,20 +1993,12 @@ function MultiBendSection({
     api.doc.transact(() => {
       for (const node of nodes) {
         api.setNodeProperty(node.id, 'deformation', null)
-        for (const track of api.getTracksForNode(node.id)) {
-          if (!track.propertyId.startsWith('deformation.bend.')) continue
-          for (const keyframe of track.keyframes) {
-            pruneStaggerMembershipForRemovedKeyframe(
-              api,
-              node.id,
-              track.propertyId,
-              keyframe.id,
-            )
-          }
-          removeTrack(api, track.id)
-        }
+        clearBendAnimation(api, node.id)
       }
     }, UNDOABLE_GESTURE_ORIGIN)
+  }
+  const resetBendAll = () => {
+    resetBendNodes(api, nodes.map((node) => node.id))
   }
 
   if (!hasBendOnEveryLayer) {
@@ -2669,6 +2662,18 @@ function MultiBendSection({
             />
           </MixedCell>
         </FieldRow>
+        <button
+          type="button"
+          onClick={resetBendAll}
+          title="Restore Bend defaults and remove Bend keyframes"
+          className="hm-control-surface mt-1 flex h-8 w-full items-center justify-center gap-1.5 rounded-[8px] text-[11px] font-medium text-text transition-colors hover:bg-panel-raised"
+        >
+          <RefreshCw aria-hidden="true" className="h-3.5 w-3.5" />
+          Reset selected bends
+        </button>
+        <p className="text-[9px] leading-4 text-text-muted">
+          Restores neutral 3D defaults and removes Bend keyframes.
+        </p>
       </InspectorDisclosure>
     </Section>
   )
@@ -3634,20 +3639,12 @@ function NodeDetails({ node, api }: { node: Node; api: SceneAPI }) {
     if (!supportsBend) return
     api.doc.transact(() => {
       api.setNodeProperty(node.id, 'deformation', null)
-      for (const track of api.getTracksForNode(node.id)) {
-        if (track.propertyId.startsWith('deformation.bend.')) {
-          for (const keyframe of track.keyframes) {
-            pruneStaggerMembershipForRemovedKeyframe(
-              api,
-              node.id,
-              track.propertyId,
-              keyframe.id,
-            )
-          }
-          removeTrack(api, track.id)
-        }
-      }
+      clearBendAnimation(api, node.id)
     }, UNDOABLE_GESTURE_ORIGIN)
+  }
+  const resetBend = () => {
+    if (!supportsBend) return
+    resetBendNodes(api, [node.id])
   }
   const patchCamera = (
     patch: Partial<
@@ -4874,6 +4871,18 @@ function NodeDetails({ node, api }: { node: Node; api: SceneAPI }) {
                 step={1}
               />
             </FieldRow>
+            <button
+              type="button"
+              onClick={resetBend}
+              title="Restore Bend defaults and remove Bend keyframes"
+              className="hm-control-surface mt-1 flex h-8 w-full items-center justify-center gap-1.5 rounded-[8px] text-[11px] font-medium text-text transition-colors hover:bg-panel-raised"
+            >
+              <RefreshCw aria-hidden="true" className="h-3.5 w-3.5" />
+              Reset bend
+            </button>
+            <p className="text-[9px] leading-4 text-text-muted">
+              Restores neutral 3D defaults and removes Bend keyframes.
+            </p>
           </InspectorDisclosure>
         </Section>
       )}
