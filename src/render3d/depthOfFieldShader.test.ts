@@ -7,6 +7,7 @@ import {
   createApertureKernel,
   depthOfFieldSampleCount,
   installDepthOfFieldShader,
+  MAX_BEND_DEFORMERS,
   MAX_DOF_KERNEL_SAMPLES,
   updateDepthOfFieldShader,
 } from './depthOfFieldShader'
@@ -228,18 +229,86 @@ describe('GPU depth-of-field policy', () => {
     }
     material.onBeforeCompile(shader as never, {} as never)
 
-    expect(shader.vertexShader).toContain('vec3 hmApplyBend')
-    expect(shader.vertexShader).toContain('transformed = hmApplyBend(transformed)')
+    expect(shader.vertexShader).toContain('vec3 hmApplyBendStack')
+    expect(shader.vertexShader).toContain(
+      'transformed = hmApplyBendStack(transformed)',
+    )
     expect(shader.fragmentShader).toContain('vec3 hmSurfaceNormal')
     expect(shader.fragmentShader).toContain('hmBendSurfaceShading')
     const uniforms = material.userData.hyperMotionDofUniforms
-    expect(uniforms.hmBendEnabled.value).toBe(1)
-    expect(uniforms.hmBendAngle.value).toBeCloseTo(Math.PI / 2)
-    expect(uniforms.hmBendFactor.value).toBe(0.75)
-    expect(uniforms.hmBendCaptureLength.value).toBe(320)
+    expect(uniforms.hmBendCount.value).toBe(1)
+    expect(uniforms.hmBendEnabled.value).toHaveLength(MAX_BEND_DEFORMERS)
+    expect(uniforms.hmBendEnabled.value[0]).toBe(1)
+    expect(uniforms.hmBendAngle.value[0]).toBeCloseTo(Math.PI / 2)
+    expect(uniforms.hmBendFactor.value[0]).toBe(0.75)
+    expect(uniforms.hmBendCaptureLength.value[0]).toBe(320)
     expect(uniforms.hmBendSurfaceShading.value).toBe(1)
     expect(uniforms.hmBendAmbient.value).toBe(0.8)
     expect(uniforms.hmBendRoughness.value).toBe(0.6)
+  })
+
+  it('uploads child and parent Bend modifiers in their execution order', () => {
+    const material = new THREE.MeshBasicMaterial()
+    const bend = {
+      enabled: true,
+      factor: 1,
+      bothDirections: false,
+      limitToRegion: true,
+      captureDirection: { x: 1, y: 0, z: 0 },
+      captureRotation: 0,
+      upDirection: { x: 0, y: 0, z: 1 },
+      upRotation: 0,
+      bendRotation: 0,
+      surfaceShading: true,
+      lightAzimuth: 135,
+      lightElevation: 55,
+      ambient: 0.82,
+      diffuse: 0.28,
+      specular: 0.12,
+      roughness: 0.62,
+    }
+    updateDepthOfFieldShader(material, {
+      enabled: false,
+      blurPx: 0,
+      minimumBlurPx: 0,
+      planeWidth: 240,
+      planeHeight: 160,
+      focusMask: false,
+      focusX: 0,
+      focusY: 0,
+      focusRadius: 0,
+      focusFalloff: 1,
+      screenPixelRatio: 1,
+      sampleCount: 6,
+      bladeCount: 7,
+      bladeRotation: 0,
+      bokehRatio: 1,
+      bends: [
+        {
+          ...bend,
+          angle: 25,
+          captureOrigin: { x: 0, y: 0, z: 0 },
+          resolvedLength: 240,
+        },
+        {
+          ...bend,
+          angle: -70,
+          captureOrigin: { x: 20, y: 20, z: 0 },
+          resolvedLength: 480,
+        },
+      ],
+    })
+
+    const uniforms = material.userData.hyperMotionDofUniforms
+    expect(uniforms.hmBendCount.value).toBe(2)
+    expect(uniforms.hmBendAngle.value[0]).toBeCloseTo(
+      THREE.MathUtils.degToRad(25),
+    )
+    expect(uniforms.hmBendAngle.value[1]).toBeCloseTo(
+      THREE.MathUtils.degToRad(-70),
+    )
+    expect(uniforms.hmBendCaptureOrigin.value[0].toArray()).toEqual([0, 0, 0])
+    expect(uniforms.hmBendCaptureOrigin.value[1].toArray()).toEqual([20, 20, 0])
   })
 
   it('orbits the bend studio light with normalized camera-space angles', () => {

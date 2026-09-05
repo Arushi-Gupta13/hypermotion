@@ -120,18 +120,19 @@ export interface Plane3D {
   motionPathBasisZ: Vec3
   cameraDepth: number
   /**
-   * Nearest bent surface whose local deformation field this plane shares.
+   * Bent surfaces shared by this plane, ordered from outermost ancestor to
+   * the plane itself.
    *
    * Explicit 3D descendants are rasterized into separate planes, so they can
-   * no longer receive an ancestor's Bend through the ancestor bitmap. Keeping
-   * the owner and its authored bounds on every extracted plane lets the GPU
-   * evaluate one continuous surface while the child retains its own XYZ and
-   * rotation transform.
+   * no longer receive Bend through an ancestor bitmap. Keeping the full owner
+   * chain and each owner's authored bounds lets the GPU preserve every parent
+   * curve and layer an independently keyframeable child Bend on top, while the
+   * child retains its own XYZ and rotation transform.
    */
-  bendSource?: {
+  bendSources?: Array<{
     nodeId: NodeId
     rect: Rect
-  }
+  }>
   extractedFromParent?: boolean
   clips?: PlaneClip3D[]
 }
@@ -891,7 +892,7 @@ export function buildWorldPlanes(
     inherited: Inherited3D,
     activeClips: PlaneClip3D[] = [],
     insideAlwaysOnTopSubtree = false,
-    inheritedBendSource: BendSource3D | null = null,
+    inheritedBendSources: readonly BendSource3D[] = [],
   ): void => {
     if (targetPathNodeIds && !targetPathNodeIds.has(id)) return
     const node = getNode(id)
@@ -962,9 +963,9 @@ export function buildWorldPlanes(
     const independentNodes = options.independentNodes ?? false
     const isRequestedNode = !targetNodeIds || targetNodeIds.has(id)
     const deformedNode = layerHasBendDeformation(node)
-    const bendSource = deformedNode
-      ? { nodeId: id, rect }
-      : inheritedBendSource
+    const bendSources = deformedNode
+      ? [...inheritedBendSources, { nodeId: id, rect }]
+      : inheritedBendSources
     // A text layer on a bent surface is rasterized as one subdivided texture
     // plane. The optimized segment-text mesh stores world-space glyph
     // vertices, so extracting it would bypass the ancestor's local Bend field.
@@ -972,7 +973,7 @@ export function buildWorldPlanes(
     const segmentText =
       segmentTextNodeIds.has(id) &&
       !deformedNode &&
-      !inheritedBendSource
+      inheritedBendSources.length === 0
     const videoStackSibling = !!parent && hasDirectVideoChild(parent)
     const segmentStackSibling = !!parent && hasDirectSegmentTextChild(parent)
     const splitsSegmentStack = hasDirectSegmentTextChild(node)
@@ -1064,8 +1065,11 @@ export function buildWorldPlanes(
         motionPathBasisY: { ...inherited.basisY },
         motionPathBasisZ: { ...inherited.basisZ },
         cameraDepth: cameraSpaceDepth(center, camera),
-        bendSource: bendSource
-          ? { nodeId: bendSource.nodeId, rect: { ...bendSource.rect } }
+        bendSources: bendSources.length
+          ? bendSources.map((source) => ({
+              nodeId: source.nodeId,
+              rect: { ...source.rect },
+            }))
           : undefined,
         extractedFromParent:
           segmentText ||
@@ -1091,7 +1095,7 @@ export function buildWorldPlanes(
     ) {
       const childIds = context.childPaintOrderByParentId.get(id) ?? []
       for (const childId of childIds) {
-        visit(childId, nextInherited, nextClips, alwaysOnTop, bendSource)
+        visit(childId, nextInherited, nextClips, alwaysOnTop, bendSources)
       }
     }
   }

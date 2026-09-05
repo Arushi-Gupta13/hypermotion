@@ -16,6 +16,12 @@ export interface ResolvedBendDeformation extends BendDeformation {
   resolvedLength: number
 }
 
+export interface BendDeformationSource {
+  deformation: unknown
+  animated?: AnimatedValue
+  rect: Rect
+}
+
 export function resolveBendDeformation(
   deformation: unknown,
   animated: AnimatedValue | undefined,
@@ -95,6 +101,43 @@ export function bendDeformationInTargetSpace(
       z: deformation.captureOrigin.z,
     },
   }
+}
+
+/**
+ * Resolve a root-to-leaf Bend owner chain into the target plane's coordinates.
+ *
+ * The returned modifier order is leaf-to-root: a child first shapes its own
+ * local geometry, then that result is carried by each enclosing bent surface.
+ * This matches the editor's "Bend on top of Bend" model and keeps the outer
+ * surface continuous across independently rasterized 3D descendants.
+ */
+export function resolveBendStackInTargetSpace(
+  sources: readonly BendDeformationSource[],
+  targetRect: Rect,
+): ResolvedBendDeformation[] {
+  const resolved = sources.flatMap((source) => {
+    const bend = resolveBendDeformation(
+      source.deformation,
+      source.animated,
+      source.rect.width,
+      source.rect.height,
+    )
+    return bend
+      ? [bendDeformationInTargetSpace(bend, source.rect, targetRect)]
+      : []
+  })
+  return resolved.reverse()
+}
+
+/** Apply an already ordered Bend modifier stack. Used by CPU geometry chrome. */
+export function bendPointStack(
+  point: DeformationVector3,
+  deformations: readonly (ResolvedBendDeformation | BendDeformation)[],
+): DeformationVector3 {
+  return deformations.reduce(
+    (current, deformation) => bendPoint(current, deformation),
+    { ...point },
+  )
 }
 
 /** CPU mirror of the vertex shader, used by selection/reference outlines. */

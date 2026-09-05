@@ -89,12 +89,13 @@ import {
 import {
   depthOfFieldSampleCount,
   installDepthOfFieldShader,
+  MAX_BEND_DEFORMERS,
   updateDepthOfFieldShader,
 } from '@/render3d/depthOfFieldShader'
 import {
   bendDeformationInTargetSpace,
-  bendPoint,
-  resolveBendDeformation,
+  bendPointStack,
+  resolveBendStackInTargetSpace,
   type ResolvedBendDeformation,
 } from '@/render3d/bendDeformation'
 import {
@@ -1309,49 +1310,35 @@ function syncPlanes(
     }
     const videoNode = plane.node.kind === 'video' ? plane.node : null
     const textureRect = plane.textureRect ?? plane.rect
-    const bendSource = plane.bendSource
-    const bendSourceNode = bendSource
-      ? planeBuildContext.nodesById.get(bendSource.nodeId)
-      : null
-    const sourceBend = bendSource && bendSourceNode
-      ? resolveBendDeformation(
-          bendSourceNode.deformation,
-          animated[bendSource.nodeId],
-          bendSource.rect.width,
-          bendSource.rect.height,
-        )
-      : null
-    const layerBend = sourceBend && bendSource
-      ? bendDeformationInTargetSpace(
-          sourceBend,
-          bendSource.rect,
-          plane.rect,
-        )
-      : null
-    const inheritsBend =
-      !!bendSource && bendSource.nodeId !== plane.nodeId
+    const bendSources = plane.bendSources ?? []
+    const layerBends = resolveBendStackInTargetSpace(
+      bendSources.flatMap((source) => {
+        const node = planeBuildContext.nodesById.get(source.nodeId)
+        return node
+          ? [{
+              deformation: node.deformation,
+              animated: animated[source.nodeId],
+              rect: source.rect,
+            }]
+          : []
+      }),
+      plane.rect,
+    ).slice(0, MAX_BEND_DEFORMERS)
+    const inheritsBend = bendSources.some(
+      (source) => source.nodeId !== plane.nodeId,
+    )
     // Subtree textures may be larger than their owning node. Bend controls
     // stay relative to the node center, so translate the capture origin into
     // the expanded texture plane's local coordinates.
-    const textureBend = layerBend
-      ? {
-          ...layerBend,
-          captureOrigin: {
-            x:
-              layerBend.captureOrigin.x +
-              plane.rect.x + plane.rect.width / 2 -
-              (textureRect.x + textureRect.width / 2),
-            y:
-              layerBend.captureOrigin.y +
-              plane.rect.y + plane.rect.height / 2 -
-              (textureRect.y + textureRect.height / 2),
-            z: layerBend.captureOrigin.z,
-          },
-        }
-      : null
-    const geometryDetail = textureBend?.enabled
-      ? textureBend.geometryDetail
-      : 1
+    const textureBends = layerBends.map((bend) =>
+      bendDeformationInTargetSpace(bend, plane.rect, textureRect),
+    )
+    const geometryDetail = Math.max(
+      1,
+      ...textureBends.map((bend) =>
+        bend.enabled ? bend.geometryDetail : 1,
+      ),
+    )
     const requestedTextureScale = projectedPlaneTextureScale({
       plane,
       camera,
@@ -1445,9 +1432,9 @@ function syncPlanes(
       const outline = makePlaneOutline(
         plane.rect.width,
         plane.rect.height,
-        layerBend,
+        layerBends,
       )
-      const referenceOutline = layerBend
+      const referenceOutline = layerBends.length
         ? makePlaneReferenceOutline(plane.rect.width, plane.rect.height)
         : undefined
       scene.add(mesh)
@@ -1467,7 +1454,7 @@ function syncPlanes(
       }
       records.set(plane.nodeId, record)
     } else {
-      if (layerBend && !record.referenceOutline) {
+      if (layerBends.length && !record.referenceOutline) {
         record.referenceOutline = makePlaneReferenceOutline(
           plane.rect.width,
           plane.rect.height,
@@ -1493,7 +1480,7 @@ function syncPlanes(
         .hyperMotionOutlineSize as
         | { width: number; height: number }
         | undefined
-      const outlineBendSignature = bendGeometrySignature(layerBend)
+      const outlineBendSignature = bendGeometrySignature(layerBends)
       if (
         !outlineSize ||
         outlineSize.width !== plane.rect.width ||
@@ -1504,7 +1491,7 @@ function syncPlanes(
         record.outline.geometry = makePlaneOutlineGeometry(
           plane.rect.width,
           plane.rect.height,
-          layerBend,
+          layerBends,
         )
         record.outline.userData.hyperMotionOutlineSize = {
           width: plane.rect.width,
@@ -1533,11 +1520,13 @@ function syncPlanes(
       }
     }
     const material = record.mesh.material as THREE.MeshBasicMaterial
-    const depthAwareBend =
-      !!textureBend?.enabled &&
-      textureBend.depthAware &&
-      Math.abs(textureBend.angle) > 0.0001 &&
-      textureBend.factor > 0
+    const depthAwareBend = textureBends.some(
+      (bend) =>
+        bend.enabled &&
+        bend.depthAware &&
+        Math.abs(bend.angle) > 0.0001 &&
+        bend.factor > 0,
+    )
     const nextAlphaTest = depthAwareBend ? 1 / 255 : 0
     if (material.alphaTest !== nextAlphaTest) {
       material.alphaTest = nextAlphaTest
@@ -1569,7 +1558,7 @@ function syncPlanes(
       bladeCount: camera.bladeCount,
       bladeRotation: camera.bladeRotation,
       bokehRatio: camera.bokehRatio,
-      bend: textureBend,
+      bends: textureBends,
     })
     if (videoNode) {
       if (record.textureKind !== 'video' || record.video?.src !== videoNode.src) {
@@ -1641,7 +1630,7 @@ function syncPlanes(
       selected.has(plane.nodeId) && !hidden.has(plane.nodeId)
     if (record.referenceOutline) {
       record.referenceOutline.visible =
-        !!layerBend?.showOriginalGeometry &&
+        layerBends.some((bend) => bend.showOriginalGeometry) &&
         selected.has(plane.nodeId) &&
         !hidden.has(plane.nodeId) &&
         !finalRender
@@ -3823,14 +3812,14 @@ function clippingPlanesForClip(clip: PlaneClip3D): THREE.Plane[] {
 function makePlaneOutline(
   width: number,
   height: number,
-  bend: ResolvedBendDeformation | null = null,
+  bends: readonly ResolvedBendDeformation[] = [],
 ): THREE.LineSegments {
   const outline = new THREE.LineSegments(
-    makePlaneOutlineGeometry(width, height, bend),
+    makePlaneOutlineGeometry(width, height, bends),
     new THREE.LineBasicMaterial({ color: 0x0a84ff, depthTest: false }),
   )
   outline.userData.hyperMotionOutlineSize = { width, height }
-  outline.userData.hyperMotionBendSignature = bendGeometrySignature(bend)
+  outline.userData.hyperMotionBendSignature = bendGeometrySignature(bends)
   return outline
 }
 
@@ -3858,17 +3847,22 @@ function makePlaneReferenceOutline(
 function makePlaneOutlineGeometry(
   width: number,
   height: number,
-  bend: ResolvedBendDeformation | null = null,
+  bends: readonly ResolvedBendDeformation[] = [],
 ): THREE.BufferGeometry {
   const hw = width / 2
   const hh = height / 2
-  const subdivisions = bend?.enabled ? Math.max(8, bend.geometryDetail) : 1
+  const subdivisions = Math.max(
+    1,
+    ...bends.map((bend) =>
+      bend.enabled ? Math.max(8, bend.geometryDetail) : 1,
+    ),
+  )
   const points: number[] = []
   const addEdge = (
     from: { x: number; y: number; z: number },
     to: { x: number; y: number; z: number },
   ) => {
-    let previous = bend ? bendPoint(from, bend) : from
+    let previous = bendPointStack(from, bends)
     for (let index = 1; index <= subdivisions; index += 1) {
       const progress = index / subdivisions
       const point = {
@@ -3876,7 +3870,7 @@ function makePlaneOutlineGeometry(
         y: from.y + (to.y - from.y) * progress,
         z: from.z + (to.z - from.z) * progress,
       }
-      const current = bend ? bendPoint(point, bend) : point
+      const current = bendPointStack(point, bends)
       points.push(
         previous.x, previous.y, previous.z + 1,
         current.x, current.y, current.z + 1,
@@ -3896,9 +3890,12 @@ function makePlaneOutlineGeometry(
   return geometry
 }
 
-function bendGeometrySignature(bend: ResolvedBendDeformation | null): string {
-  if (!bend?.enabled) return 'none'
-  return [
+function bendGeometrySignature(
+  bends: readonly ResolvedBendDeformation[],
+): string {
+  if (!bends.some((bend) => bend.enabled)) return 'none'
+  return bends.map((bend) => [
+    bend.enabled ? 1 : 0,
     bend.angle,
     bend.factor,
     bend.bothDirections ? 1 : 0,
@@ -3917,7 +3914,7 @@ function bendGeometrySignature(bend: ResolvedBendDeformation | null): string {
     bend.captureOrigin.z,
     bend.resolvedLength,
     bend.geometryDetail,
-  ].map((value) => Number(value.toFixed(4))).join(':')
+  ].map((value) => Number(value.toFixed(4))).join(':')).join('|')
 }
 
 function syncHelpers(

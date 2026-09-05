@@ -3,6 +3,8 @@
 import * as THREE from 'three'
 
 export const MAX_DOF_KERNEL_SAMPLES = 48
+/** Fixed shader budget for local + inherited Bend modifier composition. */
+export const MAX_BEND_DEFORMERS = 8
 
 export type DofPreviewQuality = 'draft' | 'balanced' | 'high'
 
@@ -29,6 +31,9 @@ export interface PlaneDepthOfFieldShaderState {
   bladeCount: number
   bladeRotation: number
   bokehRatio: number
+  /** Ordered local-to-outer Bend modifiers applied by the vertex shader. */
+  bends?: readonly PlaneBendShaderState[]
+  /** @deprecated Single-Bend compatibility for non-compositor callers. */
   bend?: PlaneBendShaderState | null
 }
 
@@ -67,18 +72,19 @@ interface DofShaderUniforms {
   hmSampleCount: { value: number }
   hmApertureStretch: { value: number }
   hmDofKernel: { value: THREE.Vector2[] }
-  hmBendEnabled: { value: number }
-  hmBendAngle: { value: number }
-  hmBendFactor: { value: number }
-  hmBendBothDirections: { value: number }
-  hmBendLimitToRegion: { value: number }
-  hmBendCaptureDirection: { value: THREE.Vector3 }
-  hmBendCaptureRotation: { value: number }
-  hmBendUpDirection: { value: THREE.Vector3 }
-  hmBendUpRotation: { value: number }
-  hmBendRotation: { value: number }
-  hmBendCaptureOrigin: { value: THREE.Vector3 }
-  hmBendCaptureLength: { value: number }
+  hmBendCount: { value: number }
+  hmBendEnabled: { value: number[] }
+  hmBendAngle: { value: number[] }
+  hmBendFactor: { value: number[] }
+  hmBendBothDirections: { value: number[] }
+  hmBendLimitToRegion: { value: number[] }
+  hmBendCaptureDirection: { value: THREE.Vector3[] }
+  hmBendCaptureRotation: { value: number[] }
+  hmBendUpDirection: { value: THREE.Vector3[] }
+  hmBendUpRotation: { value: number[] }
+  hmBendRotation: { value: number[] }
+  hmBendCaptureOrigin: { value: THREE.Vector3[] }
+  hmBendCaptureLength: { value: number[] }
   hmBendSurfaceShading: { value: number }
   hmBendLightDirection: { value: THREE.Vector3 }
   hmBendAmbient: { value: number }
@@ -87,7 +93,7 @@ interface DofShaderUniforms {
   hmBendRoughness: { value: number }
 }
 
-const DOF_SHADER_KEY = 'hypermotion-gpu-dof-bend-surface-v12'
+const DOF_SHADER_KEY = 'hypermotion-gpu-dof-bend-stack-v13'
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5))
 const kernelCache = new Map<string, THREE.Vector2[]>()
 
@@ -201,18 +207,25 @@ export function installDepthOfFieldShader(material: THREE.MeshBasicMaterial) {
     hmDofKernel: {
       value: apertureKernelVectors(7, 0, 1, 1),
     },
-    hmBendEnabled: { value: 0 },
-    hmBendAngle: { value: 0 },
-    hmBendFactor: { value: 1 },
-    hmBendBothDirections: { value: 0 },
-    hmBendLimitToRegion: { value: 1 },
-    hmBendCaptureDirection: { value: new THREE.Vector3(1, 0, 0) },
-    hmBendCaptureRotation: { value: 0 },
-    hmBendUpDirection: { value: new THREE.Vector3(0, 0, 1) },
-    hmBendUpRotation: { value: 0 },
-    hmBendRotation: { value: 0 },
-    hmBendCaptureOrigin: { value: new THREE.Vector3() },
-    hmBendCaptureLength: { value: 1 },
+    hmBendCount: { value: 0 },
+    hmBendEnabled: { value: bendNumberArray(0) },
+    hmBendAngle: { value: bendNumberArray(0) },
+    hmBendFactor: { value: bendNumberArray(1) },
+    hmBendBothDirections: { value: bendNumberArray(0) },
+    hmBendLimitToRegion: { value: bendNumberArray(1) },
+    hmBendCaptureDirection: {
+      value: bendVectorArray(() => new THREE.Vector3(1, 0, 0)),
+    },
+    hmBendCaptureRotation: { value: bendNumberArray(0) },
+    hmBendUpDirection: {
+      value: bendVectorArray(() => new THREE.Vector3(0, 0, 1)),
+    },
+    hmBendUpRotation: { value: bendNumberArray(0) },
+    hmBendRotation: { value: bendNumberArray(0) },
+    hmBendCaptureOrigin: {
+      value: bendVectorArray(() => new THREE.Vector3()),
+    },
+    hmBendCaptureLength: { value: bendNumberArray(1) },
     hmBendSurfaceShading: { value: 0 },
     hmBendLightDirection: {
       value: bendLightDirection(135, 55),
@@ -233,7 +246,7 @@ export function installDepthOfFieldShader(material: THREE.MeshBasicMaterial) {
       )
       .replace(
         '#include <begin_vertex>',
-        `#include <begin_vertex>\ntransformed = hmApplyBend(transformed);`,
+        `#include <begin_vertex>\ntransformed = hmApplyBendStack(transformed);`,
       )
       .replace(
         '#include <project_vertex>',
@@ -398,6 +411,7 @@ function hasCurrentUniformSchema(value: unknown): value is DofShaderUniforms {
     'hmSampleCount',
     'hmApertureStretch',
     'hmDofKernel',
+    'hmBendCount',
     'hmBendEnabled',
     'hmBendAngle',
     'hmBendFactor',
@@ -460,69 +474,86 @@ export function updateDepthOfFieldShader(
     state.bokehRatio,
     sampleCount,
   )
-  const bend = state.bend
-  uniforms.hmBendEnabled.value = bend?.enabled ? 1 : 0
-  uniforms.hmBendAngle.value = THREE.MathUtils.degToRad(bend?.angle ?? 0)
-  uniforms.hmBendFactor.value = clamp(bend?.factor ?? 0, 0, 1)
-  uniforms.hmBendBothDirections.value = bend?.bothDirections ? 1 : 0
-  uniforms.hmBendLimitToRegion.value = bend?.limitToRegion ? 1 : 0
-  uniforms.hmBendCaptureDirection.value.set(
-    bend?.captureDirection.x ?? 1,
-    bend?.captureDirection.y ?? 0,
-    bend?.captureDirection.z ?? 0,
+  const bends = (
+    state.bends ?? (state.bend ? [state.bend] : [])
+  ).slice(0, MAX_BEND_DEFORMERS)
+  uniforms.hmBendCount.value = bends.length
+  for (let index = 0; index < MAX_BEND_DEFORMERS; index += 1) {
+    const bend = bends[index]
+    uniforms.hmBendEnabled.value[index] = bend?.enabled ? 1 : 0
+    uniforms.hmBendAngle.value[index] = THREE.MathUtils.degToRad(
+      bend?.angle ?? 0,
+    )
+    uniforms.hmBendFactor.value[index] = clamp(bend?.factor ?? 0, 0, 1)
+    uniforms.hmBendBothDirections.value[index] = bend?.bothDirections ? 1 : 0
+    uniforms.hmBendLimitToRegion.value[index] = bend?.limitToRegion ? 1 : 0
+    uniforms.hmBendCaptureDirection.value[index]!.set(
+      bend?.captureDirection.x ?? 1,
+      bend?.captureDirection.y ?? 0,
+      bend?.captureDirection.z ?? 0,
+    )
+    uniforms.hmBendCaptureRotation.value[index] = THREE.MathUtils.degToRad(
+      bend?.captureRotation ?? 0,
+    )
+    uniforms.hmBendUpDirection.value[index]!.set(
+      bend?.upDirection.x ?? 0,
+      bend?.upDirection.y ?? 0,
+      bend?.upDirection.z ?? 1,
+    )
+    uniforms.hmBendUpRotation.value[index] = THREE.MathUtils.degToRad(
+      bend?.upRotation ?? 0,
+    )
+    uniforms.hmBendRotation.value[index] = THREE.MathUtils.degToRad(
+      bend?.bendRotation ?? 0,
+    )
+    uniforms.hmBendCaptureOrigin.value[index]!.set(
+      bend?.captureOrigin.x ?? 0,
+      bend?.captureOrigin.y ?? 0,
+      bend?.captureOrigin.z ?? 0,
+    )
+    uniforms.hmBendCaptureLength.value[index] = Math.max(
+      0.0001,
+      bend?.resolvedLength ?? 1,
+    )
+  }
+  // The closest active Bend owns the material lighting. Geometry still runs
+  // through every modifier, while a child can override its parent's shading.
+  const shadingBend = bends.find(
+    (bend) =>
+      bend.enabled &&
+      bend.surfaceShading &&
+      Math.abs(bend.angle) > 0.0001 &&
+      bend.factor > 0,
   )
-  uniforms.hmBendCaptureRotation.value = THREE.MathUtils.degToRad(
-    bend?.captureRotation ?? 0,
-  )
-  uniforms.hmBendUpDirection.value.set(
-    bend?.upDirection.x ?? 0,
-    bend?.upDirection.y ?? 0,
-    bend?.upDirection.z ?? 1,
-  )
-  uniforms.hmBendUpRotation.value = THREE.MathUtils.degToRad(
-    bend?.upRotation ?? 0,
-  )
-  uniforms.hmBendRotation.value = THREE.MathUtils.degToRad(
-    bend?.bendRotation ?? 0,
-  )
-  uniforms.hmBendCaptureOrigin.value.set(
-    bend?.captureOrigin.x ?? 0,
-    bend?.captureOrigin.y ?? 0,
-    bend?.captureOrigin.z ?? 0,
-  )
-  uniforms.hmBendCaptureLength.value = Math.max(0.0001, bend?.resolvedLength ?? 1)
   uniforms.hmBendSurfaceShading.value =
-    bend?.enabled &&
-    bend.surfaceShading &&
-    Math.abs(bend.angle) > 0.0001 &&
-    bend.factor > 0
-      ? 1
-      : 0
+    shadingBend ? 1 : 0
   uniforms.hmBendLightDirection.value.copy(
     bendLightDirection(
-      bend?.lightAzimuth ?? 135,
-      bend?.lightElevation ?? 55,
+      shadingBend?.lightAzimuth ?? 135,
+      shadingBend?.lightElevation ?? 55,
     ),
   )
-  uniforms.hmBendAmbient.value = clamp(bend?.ambient ?? 0.82, 0, 2)
-  uniforms.hmBendDiffuse.value = clamp(bend?.diffuse ?? 0.28, 0, 2)
-  uniforms.hmBendSpecular.value = clamp(bend?.specular ?? 0.12, 0, 2)
-  uniforms.hmBendRoughness.value = clamp(bend?.roughness ?? 0.62, 0, 1)
+  uniforms.hmBendAmbient.value = clamp(shadingBend?.ambient ?? 0.82, 0, 2)
+  uniforms.hmBendDiffuse.value = clamp(shadingBend?.diffuse ?? 0.28, 0, 2)
+  uniforms.hmBendSpecular.value = clamp(shadingBend?.specular ?? 0.12, 0, 2)
+  uniforms.hmBendRoughness.value = clamp(shadingBend?.roughness ?? 0.62, 0, 1)
 }
 
 const BEND_VERTEX_DECLARATIONS = `
-uniform float hmBendEnabled;
-uniform float hmBendAngle;
-uniform float hmBendFactor;
-uniform float hmBendBothDirections;
-uniform float hmBendLimitToRegion;
-uniform vec3 hmBendCaptureDirection;
-uniform float hmBendCaptureRotation;
-uniform vec3 hmBendUpDirection;
-uniform float hmBendUpRotation;
-uniform float hmBendRotation;
-uniform vec3 hmBendCaptureOrigin;
-uniform float hmBendCaptureLength;
+#define HM_MAX_BENDS ${MAX_BEND_DEFORMERS}
+uniform float hmBendCount;
+uniform float hmBendEnabled[HM_MAX_BENDS];
+uniform float hmBendAngle[HM_MAX_BENDS];
+uniform float hmBendFactor[HM_MAX_BENDS];
+uniform float hmBendBothDirections[HM_MAX_BENDS];
+uniform float hmBendLimitToRegion[HM_MAX_BENDS];
+uniform vec3 hmBendCaptureDirection[HM_MAX_BENDS];
+uniform float hmBendCaptureRotation[HM_MAX_BENDS];
+uniform vec3 hmBendUpDirection[HM_MAX_BENDS];
+uniform float hmBendUpRotation[HM_MAX_BENDS];
+uniform float hmBendRotation[HM_MAX_BENDS];
+uniform vec3 hmBendCaptureOrigin[HM_MAX_BENDS];
+uniform float hmBendCaptureLength[HM_MAX_BENDS];
 varying vec3 hmBentViewPosition;
 
 vec3 hmSafeNormalize(vec3 value, vec3 fallbackValue) {
@@ -547,17 +578,31 @@ vec2 hmBendArc(float q, float height, float start, float curvature) {
   );
 }
 
-vec3 hmApplyBend(vec3 originalPoint) {
+vec3 hmApplyBend(vec3 originalPoint, int bendIndex) {
+  float enabled = hmBendEnabled[bendIndex];
+  float angle = hmBendAngle[bendIndex];
+  float factor = hmBendFactor[bendIndex];
   if (
-    hmBendEnabled < 0.5 ||
-    abs(hmBendAngle) < 0.000001 ||
-    hmBendFactor <= 0.0
+    enabled < 0.5 ||
+    abs(angle) < 0.000001 ||
+    factor <= 0.0
   ) return originalPoint;
 
   vec3 localZ = vec3(0.0, 0.0, 1.0);
-  vec3 capture = hmSafeNormalize(hmBendCaptureDirection, vec3(1.0, 0.0, 0.0));
-  capture = hmRotateAroundAxis(capture, localZ, hmBendCaptureRotation);
-  vec3 up = hmRotateAroundAxis(hmBendUpDirection, localZ, hmBendUpRotation);
+  vec3 capture = hmSafeNormalize(
+    hmBendCaptureDirection[bendIndex],
+    vec3(1.0, 0.0, 0.0)
+  );
+  capture = hmRotateAroundAxis(
+    capture,
+    localZ,
+    hmBendCaptureRotation[bendIndex]
+  );
+  vec3 up = hmRotateAroundAxis(
+    hmBendUpDirection[bendIndex],
+    localZ,
+    hmBendUpRotation[bendIndex]
+  );
   up -= capture * dot(up, capture);
   if (length(up) < 0.00001) {
     vec3 fallbackUp = abs(capture.z) < 0.9 ? localZ : vec3(0.0, 1.0, 0.0);
@@ -567,17 +612,20 @@ vec3 hmApplyBend(vec3 originalPoint) {
   vec3 across = hmSafeNormalize(cross(capture, up), localZ);
   up = hmSafeNormalize(cross(across, capture), up);
 
-  vec3 relative = originalPoint - hmBendCaptureOrigin;
+  vec3 captureOrigin = hmBendCaptureOrigin[bendIndex];
+  vec3 relative = originalPoint - captureOrigin;
   float along = dot(relative, capture);
   float height = dot(relative, up);
   float acrossAmount = dot(relative, across);
-  float captureLength = max(hmBendCaptureLength, 0.0001);
-  float start = hmBendBothDirections > 0.5 ? -captureLength * 0.5 : 0.0;
+  float captureLength = max(hmBendCaptureLength[bendIndex], 0.0001);
+  float start = hmBendBothDirections[bendIndex] > 0.5
+    ? -captureLength * 0.5
+    : 0.0;
   float q = along - start;
-  float curvature = hmBendAngle / captureLength;
+  float curvature = angle / captureLength;
   vec2 bent;
   if (
-    hmBendLimitToRegion < 0.5 ||
+    hmBendLimitToRegion[bendIndex] < 0.5 ||
     (q >= 0.0 && q <= captureLength)
   ) {
     bent = hmBendArc(q, height, start, curvature);
@@ -590,16 +638,26 @@ vec3 hmApplyBend(vec3 originalPoint) {
     float extension = q - endpointQ;
     bent = endpoint + tangent * extension + normal * height;
   }
-  vec3 deformed = hmBendCaptureOrigin +
+  vec3 deformed = captureOrigin +
     capture * bent.x + up * bent.y + across * acrossAmount;
-  if (abs(hmBendRotation) > 0.000001) {
-    deformed = hmBendCaptureOrigin + hmRotateAroundAxis(
-      deformed - hmBendCaptureOrigin,
+  float bendRotation = hmBendRotation[bendIndex];
+  if (abs(bendRotation) > 0.000001) {
+    deformed = captureOrigin + hmRotateAroundAxis(
+      deformed - captureOrigin,
       capture,
-      hmBendRotation
+      bendRotation
     );
   }
-  return mix(originalPoint, deformed, clamp(hmBendFactor, 0.0, 1.0));
+  return mix(originalPoint, deformed, clamp(factor, 0.0, 1.0));
+}
+
+vec3 hmApplyBendStack(vec3 originalPoint) {
+  vec3 point = originalPoint;
+  for (int index = 0; index < HM_MAX_BENDS; index++) {
+    if (float(index) >= hmBendCount) break;
+    point = hmApplyBend(point, index);
+  }
+  return point;
 }
 `
 
@@ -647,6 +705,14 @@ function apertureKernelVectors(
 
 function positiveModulo(value: number, divisor: number): number {
   return ((value % divisor) + divisor) % divisor
+}
+
+function bendNumberArray(value: number): number[] {
+  return Array.from({ length: MAX_BEND_DEFORMERS }, () => value)
+}
+
+function bendVectorArray(create: () => THREE.Vector3): THREE.Vector3[] {
+  return Array.from({ length: MAX_BEND_DEFORMERS }, create)
 }
 
 function clamp(value: number, min: number, max: number): number {
