@@ -119,6 +119,19 @@ export interface Plane3D {
   motionPathBasisY: Vec3
   motionPathBasisZ: Vec3
   cameraDepth: number
+  /**
+   * Nearest bent surface whose local deformation field this plane shares.
+   *
+   * Explicit 3D descendants are rasterized into separate planes, so they can
+   * no longer receive an ancestor's Bend through the ancestor bitmap. Keeping
+   * the owner and its authored bounds on every extracted plane lets the GPU
+   * evaluate one continuous surface while the child retains its own XYZ and
+   * rotation transform.
+   */
+  bendSource?: {
+    nodeId: NodeId
+    rect: Rect
+  }
   extractedFromParent?: boolean
   clips?: PlaneClip3D[]
 }
@@ -219,6 +232,11 @@ interface Inherited3D {
   scaleX: number
   scaleY: number
   opacity: number
+}
+
+interface BendSource3D {
+  nodeId: NodeId
+  rect: Rect
 }
 
 /**
@@ -873,6 +891,7 @@ export function buildWorldPlanes(
     inherited: Inherited3D,
     activeClips: PlaneClip3D[] = [],
     insideAlwaysOnTopSubtree = false,
+    inheritedBendSource: BendSource3D | null = null,
   ): void => {
     if (targetPathNodeIds && !targetPathNodeIds.has(id)) return
     const node = getNode(id)
@@ -943,10 +962,17 @@ export function buildWorldPlanes(
     const independentNodes = options.independentNodes ?? false
     const isRequestedNode = !targetNodeIds || targetNodeIds.has(id)
     const deformedNode = layerHasBendDeformation(node)
-    // A bent text layer is rasterized as one subdivided texture plane. The
-    // normal segment-text mesh stores world-space glyph vertices, while bend
-    // capture controls are intentionally layer-local.
-    const segmentText = segmentTextNodeIds.has(id) && !deformedNode
+    const bendSource = deformedNode
+      ? { nodeId: id, rect }
+      : inheritedBendSource
+    // A text layer on a bent surface is rasterized as one subdivided texture
+    // plane. The optimized segment-text mesh stores world-space glyph
+    // vertices, so extracting it would bypass the ancestor's local Bend field.
+    // The canvas painter still evaluates the live text effect every frame.
+    const segmentText =
+      segmentTextNodeIds.has(id) &&
+      !deformedNode &&
+      !inheritedBendSource
     const videoStackSibling = !!parent && hasDirectVideoChild(parent)
     const segmentStackSibling = !!parent && hasDirectSegmentTextChild(parent)
     const splitsSegmentStack = hasDirectSegmentTextChild(node)
@@ -1038,6 +1064,9 @@ export function buildWorldPlanes(
         motionPathBasisY: { ...inherited.basisY },
         motionPathBasisZ: { ...inherited.basisZ },
         cameraDepth: cameraSpaceDepth(center, camera),
+        bendSource: bendSource
+          ? { nodeId: bendSource.nodeId, rect: { ...bendSource.rect } }
+          : undefined,
         extractedFromParent:
           segmentText ||
           segmentStackSibling ||
@@ -1062,7 +1091,7 @@ export function buildWorldPlanes(
     ) {
       const childIds = context.childPaintOrderByParentId.get(id) ?? []
       for (const childId of childIds) {
-        visit(childId, nextInherited, nextClips, alwaysOnTop)
+        visit(childId, nextInherited, nextClips, alwaysOnTop, bendSource)
       }
     }
   }

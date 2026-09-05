@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { AnimatedValue } from '@/anim'
+import type { Rect } from '@/layout'
 import {
   DEFAULT_BEND_DEFORMATION,
   normalizeLayerDeformation,
@@ -66,6 +67,33 @@ export function resolveBendDeformation(
         ? captureLength
         : automaticCaptureLength(captureDirection, layerWidth, layerHeight),
     ),
+  }
+}
+
+/**
+ * Express a Bend field authored around one layer in another plane's local
+ * coordinates. The curve itself is unchanged; only its capture origin moves.
+ * This is what lets independently transformed 3D descendants remain pieces
+ * of one continuous bent ancestor surface.
+ */
+export function bendDeformationInTargetSpace(
+  deformation: ResolvedBendDeformation,
+  sourceRect: Rect,
+  targetRect: Rect,
+): ResolvedBendDeformation {
+  return {
+    ...deformation,
+    captureOrigin: {
+      x:
+        deformation.captureOrigin.x +
+        sourceRect.x + sourceRect.width / 2 -
+        (targetRect.x + targetRect.width / 2),
+      y:
+        deformation.captureOrigin.y +
+        sourceRect.y + sourceRect.height / 2 -
+        (targetRect.y + targetRect.height / 2),
+      z: deformation.captureOrigin.z,
+    },
   }
 }
 

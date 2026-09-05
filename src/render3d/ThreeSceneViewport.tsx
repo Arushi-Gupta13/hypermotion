@@ -92,6 +92,7 @@ import {
   updateDepthOfFieldShader,
 } from '@/render3d/depthOfFieldShader'
 import {
+  bendDeformationInTargetSpace,
   bendPoint,
   resolveBendDeformation,
   type ResolvedBendDeformation,
@@ -1308,12 +1309,27 @@ function syncPlanes(
     }
     const videoNode = plane.node.kind === 'video' ? plane.node : null
     const textureRect = plane.textureRect ?? plane.rect
-    const layerBend = resolveBendDeformation(
-      plane.node.deformation,
-      animated[plane.nodeId],
-      plane.rect.width,
-      plane.rect.height,
-    )
+    const bendSource = plane.bendSource
+    const bendSourceNode = bendSource
+      ? planeBuildContext.nodesById.get(bendSource.nodeId)
+      : null
+    const sourceBend = bendSource && bendSourceNode
+      ? resolveBendDeformation(
+          bendSourceNode.deformation,
+          animated[bendSource.nodeId],
+          bendSource.rect.width,
+          bendSource.rect.height,
+        )
+      : null
+    const layerBend = sourceBend && bendSource
+      ? bendDeformationInTargetSpace(
+          sourceBend,
+          bendSource.rect,
+          plane.rect,
+        )
+      : null
+    const inheritsBend =
+      !!bendSource && bendSource.nodeId !== plane.nodeId
     // Subtree textures may be larger than their owning node. Bend controls
     // stay relative to the node center, so translate the capture origin into
     // the expanded texture plane's local coordinates.
@@ -1529,6 +1545,12 @@ function syncPlanes(
     }
     material.depthTest = depthAwareBend
     material.depthWrite = depthAwareBend
+    // An extracted child and its bent ancestor occupy the same mathematical
+    // surface. A small depth bias keeps the child's pixels above the backing
+    // fill without disabling real depth/self-occlusion when the surface curls.
+    material.polygonOffset = depthAwareBend && inheritsBend
+    material.polygonOffsetFactor = material.polygonOffset ? -1 : 0
+    material.polygonOffsetUnits = material.polygonOffset ? -1 : 0
     updateDepthOfFieldShader(material, {
       enabled: camera.depthOfField && apertureStrength > 0,
       blurPx: blur,

@@ -2,7 +2,11 @@
 
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_BEND_DEFORMATION } from '@/scene/deformation'
-import { bendPoint, resolveBendDeformation } from './bendDeformation'
+import {
+  bendDeformationInTargetSpace,
+  bendPoint,
+  resolveBendDeformation,
+} from './bendDeformation'
 
 describe('bend deformation', () => {
   it('wraps the capture length around a predictable circular arc', () => {
@@ -87,5 +91,49 @@ describe('bend deformation', () => {
       ambient: 1.2,
       roughness: 0.25,
     })
+  })
+
+  it('keeps an extracted child on the same continuous ancestor curve', () => {
+    const sourceRect = { x: 100, y: 80, width: 400, height: 240 }
+    const childRect = { x: 180, y: 120, width: 120, height: 64 }
+    const sourceBend = {
+      ...DEFAULT_BEND_DEFORMATION,
+      angle: 80,
+      captureLength: 400,
+      resolvedLength: 400,
+      captureOrigin: { x: 12, y: -8, z: 0 },
+    }
+    const childBend = bendDeformationInTargetSpace(
+      sourceBend,
+      sourceRect,
+      childRect,
+    )
+    const childPoint = { x: 35, y: 14, z: 0 }
+    const childCenterOffset = {
+      x:
+        childRect.x + childRect.width / 2 -
+        (sourceRect.x + sourceRect.width / 2),
+      y:
+        childRect.y + childRect.height / 2 -
+        (sourceRect.y + sourceRect.height / 2),
+      z: 0,
+    }
+    const sourcePoint = {
+      x: childPoint.x + childCenterOffset.x,
+      y: childPoint.y + childCenterOffset.y,
+      z: 0,
+    }
+    const bentInSource = bendPoint(sourcePoint, sourceBend)
+    const bentInChild = bendPoint(childPoint, childBend)
+
+    expect(bentInChild.x + childCenterOffset.x).toBeCloseTo(
+      bentInSource.x,
+      5,
+    )
+    expect(bentInChild.y + childCenterOffset.y).toBeCloseTo(
+      bentInSource.y,
+      5,
+    )
+    expect(bentInChild.z).toBeCloseTo(bentInSource.z, 5)
   })
 })
