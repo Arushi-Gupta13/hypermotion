@@ -22,6 +22,19 @@ export interface BendDeformationSource {
   rect: Rect
 }
 
+/**
+ * Depth compositing is a property of the authored Bend surface, not its
+ * current animated amount. Keeping it active at zero angle/factor prevents a
+ * material-program switch on the exact frame an animation settles flat.
+ */
+export function bendUsesDepthCompositing(
+  deformations: readonly (ResolvedBendDeformation | BendDeformation)[],
+): boolean {
+  return deformations.some(
+    (deformation) => deformation.enabled && deformation.depthAware,
+  )
+}
+
 export function resolveBendDeformation(
   deformation: unknown,
   animated: AnimatedValue | undefined,

@@ -6,6 +6,7 @@ import {
   bendDeformationInTargetSpace,
   bendPoint,
   bendPointStack,
+  bendUsesDepthCompositing,
   resolveBendDeformation,
   resolveBendStackInTargetSpace,
 } from './bendDeformation'
@@ -68,6 +69,23 @@ describe('bend deformation', () => {
     )
     expect(halfway.x).toBeCloseTo((100 + bent.x) / 2, 5)
     expect(halfway.z).toBeCloseTo(bent.z / 2, 5)
+  })
+
+  it('keeps depth compositing stable when an animated Bend settles flat', () => {
+    const restingBend = {
+      ...DEFAULT_BEND_DEFORMATION,
+      angle: 0,
+      factor: 0,
+      depthAware: true,
+    }
+
+    expect(bendUsesDepthCompositing([restingBend])).toBe(true)
+    expect(
+      bendUsesDepthCompositing([{ ...restingBend, enabled: false }]),
+    ).toBe(false)
+    expect(
+      bendUsesDepthCompositing([{ ...restingBend, depthAware: false }]),
+    ).toBe(false)
   })
 
   it('resolves automatic length and live keyframe overrides', () => {

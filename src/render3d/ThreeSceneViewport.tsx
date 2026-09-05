@@ -95,6 +95,7 @@ import {
 import {
   bendDeformationInTargetSpace,
   bendPointStack,
+  bendUsesDepthCompositing,
   resolveBendStackInTargetSpace,
   type ResolvedBendDeformation,
 } from '@/render3d/bendDeformation'
@@ -1520,13 +1521,10 @@ function syncPlanes(
       }
     }
     const material = record.mesh.material as THREE.MeshBasicMaterial
-    const depthAwareBend = textureBends.some(
-      (bend) =>
-        bend.enabled &&
-        bend.depthAware &&
-        Math.abs(bend.angle) > 0.0001 &&
-        bend.factor > 0,
-    )
+    // Do not key material state to animated Bend values. Crossing zero used
+    // to flip ALPHATEST and force a shader-program rebuild on the settling
+    // frame, which direct-GPU export could capture as a corrupted flash.
+    const depthAwareBend = bendUsesDepthCompositing(textureBends)
     const nextAlphaTest = depthAwareBend ? 1 / 255 : 0
     if (material.alphaTest !== nextAlphaTest) {
       material.alphaTest = nextAlphaTest

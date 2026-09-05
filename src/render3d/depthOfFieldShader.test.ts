@@ -230,6 +230,9 @@ describe('GPU depth-of-field policy', () => {
     material.onBeforeCompile(shader as never, {} as never)
 
     expect(shader.vertexShader).toContain('vec3 hmApplyBendStack')
+    expect(shader.vertexShader).toContain('float hmSinc')
+    expect(shader.vertexShader).toContain('float hmCosc')
+    expect(shader.vertexShader).not.toContain('1.0 / curvature')
     expect(shader.vertexShader).toContain(
       'transformed = hmApplyBendStack(transformed)',
     )

@@ -93,7 +93,7 @@ interface DofShaderUniforms {
   hmBendRoughness: { value: number }
 }
 
-const DOF_SHADER_KEY = 'hypermotion-gpu-dof-bend-stack-v13'
+const DOF_SHADER_KEY = 'hypermotion-gpu-dof-bend-stack-v14'
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5))
 const kernelCache = new Map<string, THREE.Vector2[]>()
 
@@ -569,12 +569,32 @@ vec3 hmRotateAroundAxis(vec3 value, vec3 axisValue, float angle) {
     axis * dot(axis, value) * (1.0 - cosine);
 }
 
+float hmSinc(float value) {
+  float squared = value * value;
+  if (abs(value) < 0.01) {
+    return 1.0 - squared / 6.0 + squared * squared / 120.0;
+  }
+  return sin(value) / value;
+}
+
+float hmCosc(float value) {
+  float squared = value * value;
+  if (abs(value) < 0.01) {
+    return value * 0.5 - value * squared / 24.0 +
+      value * squared * squared / 720.0;
+  }
+  return (1.0 - cos(value)) / value;
+}
+
 vec2 hmBendArc(float q, float height, float start, float curvature) {
   float theta = curvature * q;
-  float radius = 1.0 / curvature;
+  float sine = sin(theta);
+  float cosine = cos(theta);
+  // Express the circular arc with sinc/cosc instead of 1 / curvature.
+  // The Taylor branches remain continuous and precise as Bend settles at 0.
   return vec2(
-    start + sin(theta) * (radius - height),
-    (1.0 - cos(theta)) * radius + cos(theta) * height
+    start + q * hmSinc(theta) - height * sine,
+    q * hmCosc(theta) + height * cosine
   );
 }
 
