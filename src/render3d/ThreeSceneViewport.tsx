@@ -1517,6 +1517,18 @@ function syncPlanes(
       }
     }
     const material = record.mesh.material as THREE.MeshBasicMaterial
+    const depthAwareBend =
+      !!textureBend?.enabled &&
+      textureBend.depthAware &&
+      Math.abs(textureBend.angle) > 0.0001 &&
+      textureBend.factor > 0
+    const nextAlphaTest = depthAwareBend ? 1 / 255 : 0
+    if (material.alphaTest !== nextAlphaTest) {
+      material.alphaTest = nextAlphaTest
+      material.needsUpdate = true
+    }
+    material.depthTest = depthAwareBend
+    material.depthWrite = depthAwareBend
     updateDepthOfFieldShader(material, {
       enabled: camera.depthOfField && apertureStrength > 0,
       blurPx: blur,

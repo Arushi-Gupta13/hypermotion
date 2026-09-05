@@ -135,6 +135,12 @@ export interface AnimatedValue {
   bendCaptureOriginY?: number
   bendCaptureOriginZ?: number
   bendCaptureLength?: number
+  bendLightAzimuth?: number
+  bendLightElevation?: number
+  bendAmbient?: number
+  bendDiffuse?: number
+  bendSpecular?: number
+  bendRoughness?: number
   /** Discrete component selection evaluated from a semantic variant track. */
   variant?: VariantSelection
   focusDistance?: number
@@ -872,6 +878,24 @@ function writeProperty(
       break
     case 'deformation.bend.captureLength':
       into.bendCaptureLength = Math.max(0, value)
+      break
+    case 'deformation.bend.lightAzimuth':
+      into.bendLightAzimuth = value
+      break
+    case 'deformation.bend.lightElevation':
+      into.bendLightElevation = Math.max(-90, Math.min(90, value))
+      break
+    case 'deformation.bend.ambient':
+      into.bendAmbient = Math.max(0, Math.min(2, value))
+      break
+    case 'deformation.bend.diffuse':
+      into.bendDiffuse = Math.max(0, Math.min(2, value))
+      break
+    case 'deformation.bend.specular':
+      into.bendSpecular = Math.max(0, Math.min(2, value))
+      break
+    case 'deformation.bend.roughness':
+      into.bendRoughness = Math.max(0, Math.min(1, value))
       break
     case 'camera.focusDistance':
       into.focusDistance = value

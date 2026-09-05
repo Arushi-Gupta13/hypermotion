@@ -52,6 +52,14 @@ export function resolveBendDeformation(
       z: animated?.bendCaptureOriginZ ?? normalized.captureOrigin.z,
     },
     captureLength,
+    lightAzimuth:
+      animated?.bendLightAzimuth ?? normalized.lightAzimuth,
+    lightElevation:
+      animated?.bendLightElevation ?? normalized.lightElevation,
+    ambient: clamp(animated?.bendAmbient ?? normalized.ambient, 0, 2),
+    diffuse: clamp(animated?.bendDiffuse ?? normalized.diffuse, 0, 2),
+    specular: clamp(animated?.bendSpecular ?? normalized.specular, 0, 2),
+    roughness: clamp(animated?.bendRoughness ?? normalized.roughness, 0, 1),
     resolvedLength: Math.max(
       1,
       captureLength > 0

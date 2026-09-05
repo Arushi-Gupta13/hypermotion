@@ -152,6 +152,30 @@ export const PROPERTIES: Record<StaticPropertyId, PropertyDescriptor> = {
     id: 'deformation.bend.captureLength', group: 'deformation', label: 'Capture Length',
     layoutAffecting: false, interpolation: 'numeric', defaultValue: 0,
   },
+  'deformation.bend.lightAzimuth': {
+    id: 'deformation.bend.lightAzimuth', group: 'deformation', label: 'Light Azimuth',
+    layoutAffecting: false, interpolation: 'angle', defaultValue: 135,
+  },
+  'deformation.bend.lightElevation': {
+    id: 'deformation.bend.lightElevation', group: 'deformation', label: 'Light Elevation',
+    layoutAffecting: false, interpolation: 'angle', defaultValue: 55,
+  },
+  'deformation.bend.ambient': {
+    id: 'deformation.bend.ambient', group: 'deformation', label: 'Ambient Light',
+    layoutAffecting: false, interpolation: 'numeric', defaultValue: 0.82,
+  },
+  'deformation.bend.diffuse': {
+    id: 'deformation.bend.diffuse', group: 'deformation', label: 'Directional Light',
+    layoutAffecting: false, interpolation: 'numeric', defaultValue: 0.28,
+  },
+  'deformation.bend.specular': {
+    id: 'deformation.bend.specular', group: 'deformation', label: 'Highlight',
+    layoutAffecting: false, interpolation: 'numeric', defaultValue: 0.12,
+  },
+  'deformation.bend.roughness': {
+    id: 'deformation.bend.roughness', group: 'deformation', label: 'Roughness',
+    layoutAffecting: false, interpolation: 'numeric', defaultValue: 0.62,
+  },
 
   // camera lens group — post-layout, no relayout needed
   'camera.focusDistance': {

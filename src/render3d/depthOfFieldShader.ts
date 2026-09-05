@@ -45,6 +45,13 @@ export interface PlaneBendShaderState {
   bendRotation: number
   captureOrigin: { x: number; y: number; z: number }
   resolvedLength: number
+  surfaceShading: boolean
+  lightAzimuth: number
+  lightElevation: number
+  ambient: number
+  diffuse: number
+  specular: number
+  roughness: number
 }
 
 interface DofShaderUniforms {
@@ -72,9 +79,15 @@ interface DofShaderUniforms {
   hmBendRotation: { value: number }
   hmBendCaptureOrigin: { value: THREE.Vector3 }
   hmBendCaptureLength: { value: number }
+  hmBendSurfaceShading: { value: number }
+  hmBendLightDirection: { value: THREE.Vector3 }
+  hmBendAmbient: { value: number }
+  hmBendDiffuse: { value: number }
+  hmBendSpecular: { value: number }
+  hmBendRoughness: { value: number }
 }
 
-const DOF_SHADER_KEY = 'hypermotion-gpu-dof-bend-v11'
+const DOF_SHADER_KEY = 'hypermotion-gpu-dof-bend-surface-v12'
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5))
 const kernelCache = new Map<string, THREE.Vector2[]>()
 
@@ -195,11 +208,19 @@ export function installDepthOfFieldShader(material: THREE.MeshBasicMaterial) {
     hmBendLimitToRegion: { value: 1 },
     hmBendCaptureDirection: { value: new THREE.Vector3(1, 0, 0) },
     hmBendCaptureRotation: { value: 0 },
-    hmBendUpDirection: { value: new THREE.Vector3(0, 1, 0) },
+    hmBendUpDirection: { value: new THREE.Vector3(0, 0, 1) },
     hmBendUpRotation: { value: 0 },
     hmBendRotation: { value: 0 },
     hmBendCaptureOrigin: { value: new THREE.Vector3() },
     hmBendCaptureLength: { value: 1 },
+    hmBendSurfaceShading: { value: 0 },
+    hmBendLightDirection: {
+      value: bendLightDirection(135, 55),
+    },
+    hmBendAmbient: { value: 0.82 },
+    hmBendDiffuse: { value: 0.28 },
+    hmBendSpecular: { value: 0.12 },
+    hmBendRoughness: { value: 0.62 },
   }
   material.userData.hyperMotionDofShaderKey = DOF_SHADER_KEY
   material.userData.hyperMotionDofUniforms = uniforms
@@ -213,6 +234,10 @@ export function installDepthOfFieldShader(material: THREE.MeshBasicMaterial) {
       .replace(
         '#include <begin_vertex>',
         `#include <begin_vertex>\ntransformed = hmApplyBend(transformed);`,
+      )
+      .replace(
+        '#include <project_vertex>',
+        `#include <project_vertex>\nhmBentViewPosition = mvPosition.xyz;`,
       )
     shader.fragmentShader = shader.fragmentShader
       .replace(
@@ -230,7 +255,14 @@ uniform float hmFocusFalloff;
 uniform float hmScreenPixelRatio;
 uniform float hmSampleCount;
 uniform float hmApertureStretch;
-uniform vec2 hmDofKernel[${MAX_DOF_KERNEL_SAMPLES}];`,
+uniform vec2 hmDofKernel[${MAX_DOF_KERNEL_SAMPLES}];
+uniform float hmBendSurfaceShading;
+uniform vec3 hmBendLightDirection;
+uniform float hmBendAmbient;
+uniform float hmBendDiffuse;
+uniform float hmBendSpecular;
+uniform float hmBendRoughness;
+varying vec3 hmBentViewPosition;`,
       )
       .replace(
         '#include <map_fragment>',
@@ -314,6 +346,33 @@ uniform vec2 hmDofKernel[${MAX_DOF_KERNEL_SAMPLES}];`,
     sampledDiffuseColor = sRGBTransferEOTF( sampledDiffuseColor );
   #endif
 
+  if ( hmBendSurfaceShading > 0.5 && sampledDiffuseColor.a > 0.0001 ) {
+    // Reconstruct the deformed surface normal from adjacent camera-space
+    // fragments. This follows the actual bent tessellation, including its
+    // animated capture axes, without maintaining a second normal formula.
+    vec3 hmSurfaceDx = dFdx( hmBentViewPosition );
+    vec3 hmSurfaceDy = dFdy( hmBentViewPosition );
+    vec3 hmSurfaceNormalRaw = cross( hmSurfaceDx, hmSurfaceDy );
+    float hmSurfaceNormalLength = length( hmSurfaceNormalRaw );
+    vec3 hmSurfaceNormal = hmSurfaceNormalLength > 0.00001
+      ? hmSurfaceNormalRaw / hmSurfaceNormalLength
+      : vec3( 0.0, 0.0, 1.0 );
+    if ( hmSurfaceNormal.z < 0.0 ) hmSurfaceNormal *= -1.0;
+    vec3 hmViewDirection = normalize( -hmBentViewPosition );
+    vec3 hmLightDirection = normalize( hmBendLightDirection );
+    float hmLambert = max( dot( hmSurfaceNormal, hmLightDirection ), 0.0 );
+    vec3 hmHalfDirection = normalize( hmLightDirection + hmViewDirection );
+    float hmHighlightPower = mix( 128.0, 6.0, hmBendRoughness );
+    float hmHighlight = pow(
+      max( dot( hmSurfaceNormal, hmHalfDirection ), 0.0 ),
+      hmHighlightPower
+    );
+    float hmLighting = max( 0.0, hmBendAmbient + hmBendDiffuse * hmLambert );
+    sampledDiffuseColor.rgb =
+      sampledDiffuseColor.rgb * hmLighting +
+      vec3( hmBendSpecular * hmHighlight * sampledDiffuseColor.a );
+  }
+
   diffuseColor *= sampledDiffuseColor;
 
 #endif`,
@@ -351,6 +410,12 @@ function hasCurrentUniformSchema(value: unknown): value is DofShaderUniforms {
     'hmBendRotation',
     'hmBendCaptureOrigin',
     'hmBendCaptureLength',
+    'hmBendSurfaceShading',
+    'hmBendLightDirection',
+    'hmBendAmbient',
+    'hmBendDiffuse',
+    'hmBendSpecular',
+    'hmBendRoughness',
   ].every((key) => uniforms[key as keyof DofShaderUniforms] != null)
 }
 
@@ -411,8 +476,8 @@ export function updateDepthOfFieldShader(
   )
   uniforms.hmBendUpDirection.value.set(
     bend?.upDirection.x ?? 0,
-    bend?.upDirection.y ?? 1,
-    bend?.upDirection.z ?? 0,
+    bend?.upDirection.y ?? 0,
+    bend?.upDirection.z ?? 1,
   )
   uniforms.hmBendUpRotation.value = THREE.MathUtils.degToRad(
     bend?.upRotation ?? 0,
@@ -426,6 +491,23 @@ export function updateDepthOfFieldShader(
     bend?.captureOrigin.z ?? 0,
   )
   uniforms.hmBendCaptureLength.value = Math.max(0.0001, bend?.resolvedLength ?? 1)
+  uniforms.hmBendSurfaceShading.value =
+    bend?.enabled &&
+    bend.surfaceShading &&
+    Math.abs(bend.angle) > 0.0001 &&
+    bend.factor > 0
+      ? 1
+      : 0
+  uniforms.hmBendLightDirection.value.copy(
+    bendLightDirection(
+      bend?.lightAzimuth ?? 135,
+      bend?.lightElevation ?? 55,
+    ),
+  )
+  uniforms.hmBendAmbient.value = clamp(bend?.ambient ?? 0.82, 0, 2)
+  uniforms.hmBendDiffuse.value = clamp(bend?.diffuse ?? 0.28, 0, 2)
+  uniforms.hmBendSpecular.value = clamp(bend?.specular ?? 0.12, 0, 2)
+  uniforms.hmBendRoughness.value = clamp(bend?.roughness ?? 0.62, 0, 1)
 }
 
 const BEND_VERTEX_DECLARATIONS = `
@@ -441,6 +523,7 @@ uniform float hmBendUpRotation;
 uniform float hmBendRotation;
 uniform vec3 hmBendCaptureOrigin;
 uniform float hmBendCaptureLength;
+varying vec3 hmBentViewPosition;
 
 vec3 hmSafeNormalize(vec3 value, vec3 fallbackValue) {
   float magnitude = length(value);
@@ -480,7 +563,7 @@ vec3 hmApplyBend(vec3 originalPoint) {
     vec3 fallbackUp = abs(capture.z) < 0.9 ? localZ : vec3(0.0, 1.0, 0.0);
     up = fallbackUp - capture * dot(fallbackUp, capture);
   }
-  up = hmSafeNormalize(up, vec3(0.0, 1.0, 0.0));
+  up = hmSafeNormalize(up, vec3(0.0, 0.0, 1.0));
   vec3 across = hmSafeNormalize(cross(capture, up), localZ);
   up = hmSafeNormalize(cross(across, capture), up);
 
@@ -519,6 +602,22 @@ vec3 hmApplyBend(vec3 originalPoint) {
   return mix(originalPoint, deformed, clamp(hmBendFactor, 0.0, 1.0));
 }
 `
+
+export function bendLightDirection(
+  azimuthDegrees: number,
+  elevationDegrees: number,
+): THREE.Vector3 {
+  const azimuth = THREE.MathUtils.degToRad(azimuthDegrees)
+  const elevation = THREE.MathUtils.degToRad(
+    clamp(elevationDegrees, -90, 90),
+  )
+  const horizontal = Math.cos(elevation)
+  return new THREE.Vector3(
+    horizontal * Math.cos(azimuth),
+    horizontal * Math.sin(azimuth),
+    Math.sin(elevation),
+  ).normalize()
+}
 
 function apertureKernelVectors(
   bladeCount: number,

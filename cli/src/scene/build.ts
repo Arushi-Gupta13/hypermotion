@@ -501,6 +501,14 @@ export interface BendDeformationJson {
   captureOrigin?: Partial<DeformationVector3Json>
   /** A value of 0 automatically fits the layer bounds. */
   captureLength?: number
+  surfaceShading?: boolean
+  depthAware?: boolean
+  lightAzimuth?: number
+  lightElevation?: number
+  ambient?: number
+  diffuse?: number
+  specular?: number
+  roughness?: number
   geometryDetail?: number
 }
 
@@ -598,6 +606,12 @@ export const PROPERTY_IDS = [
   'deformation.bend.captureOriginY',
   'deformation.bend.captureOriginZ',
   'deformation.bend.captureLength',
+  'deformation.bend.lightAzimuth',
+  'deformation.bend.lightElevation',
+  'deformation.bend.ambient',
+  'deformation.bend.diffuse',
+  'deformation.bend.specular',
+  'deformation.bend.roughness',
   'layout.gap',
   'layout.padding.top',
   'layout.padding.right',
@@ -2769,6 +2783,12 @@ function validateLayerDeformation(
     'upRotation',
     'bendRotation',
     'captureLength',
+    'lightAzimuth',
+    'lightElevation',
+    'ambient',
+    'diffuse',
+    'specular',
+    'roughness',
     'geometryDetail',
   ]) finite(key)
   for (const key of [
@@ -2776,6 +2796,8 @@ function validateLayerDeformation(
     'showOriginalGeometry',
     'bothDirections',
     'limitToRegion',
+    'surfaceShading',
+    'depthAware',
   ]) {
     if (bend[key] !== undefined && typeof bend[key] !== 'boolean') {
       errors.push(`${label}.${key} must be a boolean`)
@@ -2806,6 +2828,24 @@ function validateLayerDeformation(
   }
   if (typeof bend.captureLength === 'number' && bend.captureLength < 0) {
     errors.push(`${label}.captureLength must be at least 0`)
+  }
+  if (
+    typeof bend.lightElevation === 'number' &&
+    (bend.lightElevation < -90 || bend.lightElevation > 90)
+  ) {
+    errors.push(`${label}.lightElevation must be between -90 and 90`)
+  }
+  for (const key of ['ambient', 'diffuse', 'specular']) {
+    const value = bend[key]
+    if (typeof value === 'number' && (value < 0 || value > 2)) {
+      errors.push(`${label}.${key} must be between 0 and 2`)
+    }
+  }
+  if (
+    typeof bend.roughness === 'number' &&
+    (bend.roughness < 0 || bend.roughness > 1)
+  ) {
+    errors.push(`${label}.roughness must be between 0 and 1`)
   }
   if (
     typeof bend.geometryDetail === 'number' &&

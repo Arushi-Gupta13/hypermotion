@@ -14,8 +14,8 @@ describe('bend deformation', () => {
     }
     const endpoint = bendPoint({ x: 100, y: 0, z: 0 }, bend)
     expect(endpoint.x).toBeCloseTo(200 / Math.PI, 4)
-    expect(endpoint.y).toBeCloseTo(200 / Math.PI, 4)
-    expect(endpoint.z).toBeCloseTo(0, 6)
+    expect(endpoint.y).toBeCloseTo(0, 6)
+    expect(endpoint.z).toBeCloseTo(200 / Math.PI, 4)
   })
 
   it('keeps geometry beyond a limited region on its endpoint tangent', () => {
@@ -28,7 +28,8 @@ describe('bend deformation', () => {
     }
     const beyond = bendPoint({ x: 150, y: 0, z: 0 }, bend)
     expect(beyond.x).toBeCloseTo(200 / Math.PI, 4)
-    expect(beyond.y).toBeCloseTo(200 / Math.PI + 50, 4)
+    expect(beyond.y).toBeCloseTo(0, 6)
+    expect(beyond.z).toBeCloseTo(200 / Math.PI + 50, 4)
   })
 
   it('centers the capture range when both directions is enabled', () => {
@@ -60,13 +61,20 @@ describe('bend deformation', () => {
       { ...full, factor: 0.5 },
     )
     expect(halfway.x).toBeCloseTo((100 + bent.x) / 2, 5)
-    expect(halfway.y).toBeCloseTo(bent.y / 2, 5)
+    expect(halfway.z).toBeCloseTo(bent.z / 2, 5)
   })
 
   it('resolves automatic length and live keyframe overrides', () => {
     const bend = resolveBendDeformation(
       DEFAULT_BEND_DEFORMATION,
-      { bendAngle: -45, bendFactor: 0.4, bendCaptureLength: 240 },
+      {
+        bendAngle: -45,
+        bendFactor: 0.4,
+        bendCaptureLength: 240,
+        bendLightAzimuth: 20,
+        bendAmbient: 1.2,
+        bendRoughness: 0.25,
+      },
       320,
       180,
     )
@@ -75,6 +83,9 @@ describe('bend deformation', () => {
       factor: 0.4,
       captureLength: 240,
       resolvedLength: 240,
+      lightAzimuth: 20,
+      ambient: 1.2,
+      roughness: 0.25,
     })
   })
 })

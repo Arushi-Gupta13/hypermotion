@@ -36,6 +36,26 @@ describe('layer deformation persistence', () => {
       captureLength: 0,
       geometryDetail: 128,
       captureDirection: { x: 1, y: 1, z: 0 },
+      upDirection: { x: 0, y: 0, z: 1 },
+      surfaceShading: true,
+      depthAware: true,
+    })
+  })
+
+  it('clamps imported 3D surface controls to renderer-safe ranges', () => {
+    expect(normalizeLayerDeformation({
+      kind: 'bend',
+      lightElevation: 140,
+      ambient: -1,
+      diffuse: 4,
+      specular: 3,
+      roughness: 2,
+    })).toMatchObject({
+      lightElevation: 90,
+      ambient: 0,
+      diffuse: 2,
+      specular: 2,
+      roughness: 1,
     })
   })
 })

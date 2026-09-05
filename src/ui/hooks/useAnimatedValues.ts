@@ -79,6 +79,12 @@ export interface AnimatedValue {
   bendCaptureOriginY?: number
   bendCaptureOriginZ?: number
   bendCaptureLength?: number
+  bendLightAzimuth?: number
+  bendLightElevation?: number
+  bendAmbient?: number
+  bendDiffuse?: number
+  bendSpecular?: number
+  bendRoughness?: number
   /** Discrete component selection evaluated from a semantic variant track. */
   variant?: VariantSelection
   focusDistance?: number

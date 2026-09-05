@@ -586,16 +586,26 @@ describe('stagger property keyframe sets', () => {
       1,
       options,
     )
+    toggleStaggerSetPropertyKeyframes(
+      api,
+      layers.map((nodeId, index) => ({
+        nodeId,
+        currentValue: 0.4 + index * 0.1,
+      })),
+      'deformation.bend.roughness',
+      1,
+      options,
+    )
     const stampedTrackIds = stampStaggerSetPatch(
       api,
       3,
       'deformation',
-      { angle: 120, captureDirectionX: 0.75 },
+      { angle: 120, captureDirectionX: 0.75, roughness: 0.8 },
       'active-track',
       options,
     )
 
-    expect(stampedTrackIds).toHaveLength(6)
+    expect(stampedTrackIds).toHaveLength(9)
     expect(times(api, layers[0]!, 'deformation.bend.angle')).toEqual([1, 3])
     expect(times(api, layers[1]!, 'deformation.bend.angle')).toEqual([
       1.1, 3.1,
@@ -620,6 +630,7 @@ describe('stagger property keyframe sets', () => {
       new Set([
         'deformation.bend.angle',
         'deformation.bend.captureDirectionX',
+        'deformation.bend.roughness',
       ]),
     )
 

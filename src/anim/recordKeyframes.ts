@@ -86,6 +86,12 @@ const DEFORMATION_PROP_IDS: Partial<Record<string, PropertyId>> = {
   captureOriginY: 'deformation.bend.captureOriginY',
   captureOriginZ: 'deformation.bend.captureOriginZ',
   captureLength: 'deformation.bend.captureLength',
+  lightAzimuth: 'deformation.bend.lightAzimuth',
+  lightElevation: 'deformation.bend.lightElevation',
+  ambient: 'deformation.bend.ambient',
+  diffuse: 'deformation.bend.diffuse',
+  specular: 'deformation.bend.specular',
+  roughness: 'deformation.bend.roughness',
 }
 
 const LAYOUT_PROP_IDS: Partial<Record<string, PropertyId>> = {

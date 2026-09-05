@@ -150,7 +150,7 @@ describe('batched text-segment material shader', () => {
 
     expect(material.onBeforeCompile).toBe(compileOnce)
     expect(material.version).toBe(versionOnce)
-    expect(cacheKey).toContain('hypermotion-gpu-dof-bend-v11')
+    expect(cacheKey).toContain('hypermotion-gpu-dof-bend-surface-v12')
     expect(cacheKey).toContain('hypermotion-text-segment-v3')
   })
 

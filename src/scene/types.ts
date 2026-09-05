@@ -500,6 +500,22 @@ export interface BendDeformation {
   captureOrigin: DeformationVector3
   /** Capture-region length in pixels. 0 means resolve from the layer bounds. */
   captureLength: number
+  /** Shade the deformed surface from its reconstructed camera-space normals. */
+  surfaceShading: boolean
+  /** Let folded parts of this surface occlude one another by depth. */
+  depthAware: boolean
+  /** Studio-light orbit around the camera axis, in degrees. */
+  lightAzimuth: number
+  /** Studio-light height above the surface, in degrees. */
+  lightElevation: number
+  /** Base light retained on faces turned away from the studio light. */
+  ambient: number
+  /** Directional light contribution. */
+  diffuse: number
+  /** White highlight contribution. */
+  specular: number
+  /** Highlight spread: 0 is tight/glossy and 1 is broad/matte. */
+  roughness: number
   /** GPU mesh detail. Kept static because changing topology is not interpolable. */
   geometryDetail: number
 }
@@ -1297,6 +1313,12 @@ export type PropertyId =
   | 'deformation.bend.captureOriginY'
   | 'deformation.bend.captureOriginZ'
   | 'deformation.bend.captureLength'
+  | 'deformation.bend.lightAzimuth'
+  | 'deformation.bend.lightElevation'
+  | 'deformation.bend.ambient'
+  | 'deformation.bend.diffuse'
+  | 'deformation.bend.specular'
+  | 'deformation.bend.roughness'
   // camera lens group — post-layout, cheap
   | 'camera.focusDistance'
   | 'camera.focusX'

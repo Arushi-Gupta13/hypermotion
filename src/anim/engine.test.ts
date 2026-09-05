@@ -210,6 +210,26 @@ describe('animation engine track preview', () => {
         { id: 'factor-end', time: 2, value: 1 },
       ],
     })
+    api.setTrack({
+      id: 'bend-light-track',
+      nodeId,
+      propertyId: 'deformation.bend.lightAzimuth',
+      defaultEasing: 'linear',
+      keyframes: [
+        { id: 'light-start', time: 0, value: -90 },
+        { id: 'light-end', time: 2, value: 90 },
+      ],
+    })
+    api.setTrack({
+      id: 'bend-roughness-track',
+      nodeId,
+      propertyId: 'deformation.bend.roughness',
+      defaultEasing: 'linear',
+      keyframes: [
+        { id: 'rough-start', time: 0, value: 0.2 },
+        { id: 'rough-end', time: 2, value: 0.8 },
+      ],
+    })
 
     const engine = getAnimEngine()
     engine.attach(api)
@@ -218,6 +238,8 @@ describe('animation engine track preview', () => {
     expect(engine.getSnapshot()[nodeId]).toMatchObject({
       bendAngle: 90,
       bendFactor: 0.5,
+      bendLightAzimuth: 0,
+      bendRoughness: 0.5,
     })
   })
 

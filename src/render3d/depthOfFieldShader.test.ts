@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
 import {
+  bendLightDirection,
   createApertureKernel,
   depthOfFieldSampleCount,
   installDepthOfFieldShader,
@@ -210,6 +211,13 @@ describe('GPU depth-of-field policy', () => {
         bendRotation: 20,
         captureOrigin: { x: 12, y: 24, z: 0 },
         resolvedLength: 320,
+        surfaceShading: true,
+        lightAzimuth: 135,
+        lightElevation: 55,
+        ambient: 0.8,
+        diffuse: 0.3,
+        specular: 0.15,
+        roughness: 0.6,
       },
     })
     const shader = {
@@ -222,11 +230,24 @@ describe('GPU depth-of-field policy', () => {
 
     expect(shader.vertexShader).toContain('vec3 hmApplyBend')
     expect(shader.vertexShader).toContain('transformed = hmApplyBend(transformed)')
+    expect(shader.fragmentShader).toContain('vec3 hmSurfaceNormal')
+    expect(shader.fragmentShader).toContain('hmBendSurfaceShading')
     const uniforms = material.userData.hyperMotionDofUniforms
     expect(uniforms.hmBendEnabled.value).toBe(1)
     expect(uniforms.hmBendAngle.value).toBeCloseTo(Math.PI / 2)
     expect(uniforms.hmBendFactor.value).toBe(0.75)
     expect(uniforms.hmBendCaptureLength.value).toBe(320)
+    expect(uniforms.hmBendSurfaceShading.value).toBe(1)
+    expect(uniforms.hmBendAmbient.value).toBe(0.8)
+    expect(uniforms.hmBendRoughness.value).toBe(0.6)
+  })
+
+  it('orbits the bend studio light with normalized camera-space angles', () => {
+    expect(bendLightDirection(0, 0).toArray()).toEqual([1, 0, 0])
+    const overhead = bendLightDirection(20, 90)
+    expect(overhead.x).toBeCloseTo(0, 6)
+    expect(overhead.y).toBeCloseTo(0, 6)
+    expect(overhead.z).toBeCloseTo(1, 6)
   })
 
   it('reinstalls uniforms after Fast Refresh leaves an older shader schema', () => {

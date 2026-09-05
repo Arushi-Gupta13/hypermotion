@@ -19,11 +19,21 @@ export const DEFAULT_BEND_DEFORMATION: BendDeformation = Object.freeze({
   showOriginalGeometry: false,
   captureDirection: Object.freeze({ x: 1, y: 0, z: 0 }),
   captureRotation: 0,
-  upDirection: Object.freeze({ x: 0, y: 1, z: 0 }),
+  // A new bend should read as a surface folding through camera depth. The
+  // previous Y-up default only curved the pixels inside the canvas plane.
+  upDirection: Object.freeze({ x: 0, y: 0, z: 1 }),
   upRotation: 0,
   bendRotation: 0,
   captureOrigin: Object.freeze({ x: 0, y: 0, z: 0 }),
   captureLength: 0,
+  surfaceShading: true,
+  depthAware: true,
+  lightAzimuth: 135,
+  lightElevation: 55,
+  ambient: 0.82,
+  diffuse: 0.28,
+  specular: 0.12,
+  roughness: 0.62,
   geometryDetail: 32,
 })
 
@@ -43,11 +53,22 @@ export function normalizeLayerDeformation(
     showOriginalGeometry: booleanValue(source.showOriginalGeometry, false),
     captureDirection: vector(source.captureDirection, { x: 1, y: 0, z: 0 }),
     captureRotation: finite(source.captureRotation, 0),
-    upDirection: vector(source.upDirection, { x: 0, y: 1, z: 0 }),
+    upDirection: vector(
+      source.upDirection,
+      DEFAULT_BEND_DEFORMATION.upDirection,
+    ),
     upRotation: finite(source.upRotation, 0),
     bendRotation: finite(source.bendRotation, 0),
     captureOrigin: vector(source.captureOrigin, { x: 0, y: 0, z: 0 }),
     captureLength: Math.max(0, finite(source.captureLength, 0)),
+    surfaceShading: booleanValue(source.surfaceShading, true),
+    depthAware: booleanValue(source.depthAware, true),
+    lightAzimuth: finite(source.lightAzimuth, 135),
+    lightElevation: clamp(finite(source.lightElevation, 55), -90, 90),
+    ambient: clamp(finite(source.ambient, 0.82), 0, 2),
+    diffuse: clamp(finite(source.diffuse, 0.28), 0, 2),
+    specular: clamp(finite(source.specular, 0.12), 0, 2),
+    roughness: clamp(finite(source.roughness, 0.62), 0, 1),
     geometryDetail: Math.round(
       clamp(
         finite(source.geometryDetail, DEFAULT_BEND_DEFORMATION.geometryDetail),

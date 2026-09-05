@@ -84,6 +84,8 @@ describe('recordKeyframes inspector coverage', () => {
         captureDirectionX: 1,
         captureOriginY: 24,
         captureLength: 480,
+        lightAzimuth: 135,
+        roughness: 0.6,
       }),
     ).toEqual([
       { propertyId: 'deformation.bend.angle', value: 90 },
@@ -91,6 +93,8 @@ describe('recordKeyframes inspector coverage', () => {
       { propertyId: 'deformation.bend.captureDirectionX', value: 1 },
       { propertyId: 'deformation.bend.captureOriginY', value: 24 },
       { propertyId: 'deformation.bend.captureLength', value: 480 },
+      { propertyId: 'deformation.bend.lightAzimuth', value: 135 },
+      { propertyId: 'deformation.bend.roughness', value: 0.6 },
     ])
   })
 })

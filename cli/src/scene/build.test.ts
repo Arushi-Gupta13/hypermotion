@@ -543,6 +543,14 @@ test('buildSceneBytes preserves bend deformation and keyframes', () => {
     bendRotation: 20,
     captureOrigin: { x: 16, y: -24, z: 4 },
     captureLength: 480,
+    surfaceShading: true,
+    depthAware: true,
+    lightAzimuth: 135,
+    lightElevation: 55,
+    ambient: 0.82,
+    diffuse: 0.28,
+    specular: 0.12,
+    roughness: 0.62,
     geometryDetail: 48,
   }
   scene.tracks = {
