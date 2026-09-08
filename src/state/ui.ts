@@ -293,6 +293,10 @@ interface UIState {
    */
   editingTextId: string | null
   /**
+   * Id of the vector node currently in on-canvas point/handle edit mode.
+   */
+  editingVectorId: string | null
+  /**
    * The track row the user most recently clicked in the Timeline panel,
    * or null when no track is focused. The global Delete keyboard
    * shortcut consults this first: if a track is focused, Delete removes
@@ -406,6 +410,7 @@ interface UIState {
   setRenameDialogOpen: (open: boolean) => void
   /** Enter or exit inline text-edit mode for the given node id. */
   setEditingTextId: (id: string | null) => void
+  setEditingVectorId: (id: string | null) => void
   /** Set the timeline-focused track (or null to clear). */
   setSelectedTrackId: (id: string | null) => void
   /**
@@ -607,6 +612,7 @@ export const useUI = create<UIState>((set) => ({
   recording: false,
   renameDialogOpen: false,
   editingTextId: null,
+  editingVectorId: null,
   selectedTrackId: null,
   layersWidth: readStoredNumber('hyper-motion.layersWidth', 256),
   inspectorWidth: clamp(
@@ -635,12 +641,16 @@ export const useUI = create<UIState>((set) => ({
   // header), they're no longer "in track-edit mode," so a follow-up
   // Delete should hit the layer they just selected — not a stale track.
   setSelection: (ids) =>
-    set({
+    set((s) => ({
       selection: ids,
       selectionAnchor: ids[ids.length - 1] ?? null,
       selectedTrackId: null,
       inspectorMode: 'properties',
-    }),
+      editingVectorId:
+        s.editingVectorId && ids.includes(s.editingVectorId)
+          ? s.editingVectorId
+          : null,
+    })),
   toggleInSelection: (id, additive) =>
     set((s) => {
       if (!additive)
@@ -698,6 +708,7 @@ export const useUI = create<UIState>((set) => ({
       selectionAnchor: null,
       selectedTrackId: null,
       inspectorMode: 'properties',
+      editingVectorId: null,
     }),
   togglePanel: (key) =>
     set((s) => ({ panels: { ...s.panels, [key]: !s.panels[key] } })),
@@ -794,7 +805,10 @@ export const useUI = create<UIState>((set) => ({
     set({ staggerDelay: Math.max(0, seconds) }),
   setRecording: (on) => set({ recording: on }),
   setRenameDialogOpen: (open) => set({ renameDialogOpen: open }),
-  setEditingTextId: (id) => set({ editingTextId: id }),
+  setEditingTextId: (id) =>
+    set({ editingTextId: id, ...(id ? { editingVectorId: null } : {}) }),
+  setEditingVectorId: (id) =>
+    set({ editingVectorId: id, ...(id ? { editingTextId: null } : {}) }),
   setSelectedTrackId: (id) =>
     set({
       selectedTrackId: id,

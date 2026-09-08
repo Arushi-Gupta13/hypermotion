@@ -39,6 +39,14 @@ export { SceneProvider } from './context'
 export { useSceneAPI, useSceneVersion } from './hooks'
 export * from './vector'
 export {
+  DEFAULT_LAYER_BEND,
+  evaluateLayerBendInPlane,
+  evaluateLayerBendZ,
+  layerBendIsActive,
+  mergeLayerBend,
+  normalizeLayerBend,
+} from './layerBend'
+export {
   MAX_LAYER_BLUR_PX,
   clampLayerBlurAmount,
   effectStableId,

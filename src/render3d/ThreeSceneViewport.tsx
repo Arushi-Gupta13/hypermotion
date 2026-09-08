@@ -119,6 +119,11 @@ import {
   textureScaleForRect,
 } from '@/render3d/texturePolicy'
 import {
+  applyPlaneBendGeometry,
+  LAYER_BEND_SEGMENTS,
+  planeNeedsBendMesh,
+} from '@/render3d/layerBendMesh'
+import {
   layoutCanvasTextAnimationSegments as computeCanvasTextAnimationSegments,
   layoutCanvasTextLines as computeCanvasTextLines,
   trackedGlyphOffsets,
@@ -145,6 +150,7 @@ import {
   paintVectorNodeToCanvas,
   vectorTrimState,
 } from '@/render/vectorPaint'
+import { resolveDisplayedVectorNode } from '@/render/vectorDisplay'
 import {
   layerRenderOrder,
   nodesInBackToFrontPaintOrder,
@@ -155,6 +161,7 @@ import {
 } from '@/render/paperShaderSource'
 import { getPreservedVectorSource } from '@/render/vectorSource'
 import { textStaggerCurvePreviewStore } from '@/ui/textStaggerCurvePreviewStore'
+import { vectorEditPreviewStore } from '@/ui/vectorEditPreviewStore'
 import {
   getCachedTextureImage,
   IMAGE_TEXTURE_LOADED_EVENT,
@@ -525,6 +532,7 @@ export function ThreeSceneViewport({
     pixelRatio: number
     texturePixelRatio: number
     curvePreviewRevision: number
+    vectorEditPreview: ReturnType<typeof vectorEditPreviewStore.getSnapshot>
   } | null>(null)
   const [webglUnavailable, setWebglUnavailable] = useState(false)
   const [imageRevision, setImageRevision] = useState(0)
@@ -541,6 +549,11 @@ export function ThreeSceneViewport({
     textStaggerCurvePreviewStore.subscribeAll,
     textStaggerCurvePreviewStore.getRevision,
     textStaggerCurvePreviewStore.getRevision,
+  )
+  const vectorEditPreview = useSyncExternalStore(
+    vectorEditPreviewStore.subscribe,
+    vectorEditPreviewStore.getSnapshot,
+    vectorEditPreviewStore.getSnapshot,
   )
 
   const activeRootId = api.getRoot()
@@ -841,6 +854,7 @@ export function ThreeSceneViewport({
       previousPlaneSync.hiddenNodeIds !== hiddenNodeIds ||
       previousPlaneSync.textureRevision !== textureRevision ||
       previousPlaneSync.curvePreviewRevision !== curvePreviewRevision ||
+      previousPlaneSync.vectorEditPreview !== vectorEditPreview ||
       previousPlaneSync.showPlanes !== showPlanes ||
       previousPlaneSync.pixelRatio !== pixelRatio ||
       previousPlaneSync.texturePixelRatio !== stableTexturePixelRatio ||
@@ -875,6 +889,7 @@ export function ThreeSceneViewport({
           interactiveCameraPreview,
           finalRender,
           curvePreviewRevision,
+          vectorEditPreview,
           stableTexturePixelRatio,
         )
       } else {
@@ -898,6 +913,7 @@ export function ThreeSceneViewport({
       pixelRatio,
       texturePixelRatio: stableTexturePixelRatio,
       curvePreviewRevision,
+      vectorEditPreview,
     }
     syncHelpers(
       helpersRef.current,
@@ -1009,6 +1025,7 @@ export function ThreeSceneViewport({
     postEffectsIdleQuality,
     postEffectsQualityRevision,
     curvePreviewRevision,
+    vectorEditPreview,
     texturePixelRatio,
     // Changing the zoom-derived pixel-ratio bucket reallocates and clears the
     // WebGL drawing buffer. Render again immediately after the resize effect.
@@ -1214,6 +1231,7 @@ function syncPlanes(
   interactiveCameraPreview: boolean,
   finalRender: boolean,
   curvePreviewRevision: number,
+  vectorEditPreview: ReturnType<typeof vectorEditPreviewStore.getSnapshot>,
   texturePixelRatio: number,
 ) {
   const active = new Set<NodeId>()
@@ -1392,6 +1410,7 @@ function syncPlanes(
       planeContainsTrailPreview(planeBuildContext, plane)
         ? curvePreviewRevision
         : 0,
+      vectorEditPreview[plane.nodeId] ? 'vector-edit' : '',
     ].join(':')
     // Viewport pan/zoom, selection, and camera-only renders must reuse the
     // existing bitmap. A plane is rasterized only when its scene/animation
@@ -1414,12 +1433,7 @@ function syncPlanes(
         )
       : null
     if (!record) {
-      const geometry = new THREE.PlaneGeometry(
-        textureRect.width,
-        textureRect.height,
-        geometryDetail,
-        geometryDetail,
-      )
+      const geometry = createPlaneGeometry(textureRect, plane, geometryDetail)
       const texture = videoNode
         ? createVideoTexture(createVideoElement(videoNode))
         : createPlaneTexture(canvas!, renderer)
@@ -1469,19 +1483,18 @@ function syncPlanes(
         scene.add(record.referenceOutline)
       }
       const current = (record.mesh.geometry as THREE.PlaneGeometry).parameters
+      const wantSegments = Math.max(
+        geometryDetail,
+        planeNeedsBendMesh(plane) ? LAYER_BEND_SEGMENTS : 1,
+      )
       if (
         current.width !== textureRect.width ||
         current.height !== textureRect.height ||
-        current.widthSegments !== geometryDetail ||
-        current.heightSegments !== geometryDetail
+        current.widthSegments !== wantSegments ||
+        current.heightSegments !== wantSegments
       ) {
         record.mesh.geometry.dispose()
-        record.mesh.geometry = new THREE.PlaneGeometry(
-          textureRect.width,
-          textureRect.height,
-          geometryDetail,
-          geometryDetail,
-        )
+        record.mesh.geometry = createPlaneGeometry(textureRect, plane, geometryDetail)
       }
       const outlineSize = record.outline.userData
         .hyperMotionOutlineSize as
@@ -1606,6 +1619,12 @@ function syncPlanes(
       record.textureSignature = textureSignature
     }
     applyPlaneTextureTransform(record.mesh, plane)
+    if (planeNeedsBendMesh(plane)) {
+      applyPlaneBendGeometry(
+        record.mesh.geometry as THREE.PlaneGeometry,
+        plane,
+      )
+    }
     applyPlaneTransform(record.outline, plane)
     if (record.referenceOutline) {
       applyPlaneTransform(record.referenceOutline, plane)
@@ -4467,7 +4486,7 @@ function paintNodeSource(
   const w = Math.max(1, rect.width)
   const h = Math.max(1, rect.height)
   if (node.kind === 'vector') {
-    paintVectorLayerToCanvas(ctx, node, w, h)
+    paintVectorLayerToCanvas(ctx, node, w, h, anim)
     return
   }
   const cornerRadius =
@@ -6208,14 +6227,40 @@ function paintImageNode(
   }
 }
 
+/**
+ * `minDetail` lets a caller with its own subdivision requirement (GPU layer
+ * deformation's `geometryDetail`) fold it in — the plane needs whichever of
+ * that or the simple layer-bend mesh's fixed segment count is higher.
+ */
+function createPlaneGeometry(
+  textureRect: { width: number; height: number },
+  plane: Plane3D,
+  minDetail = 1,
+): THREE.PlaneGeometry {
+  const segments = Math.max(
+    minDetail,
+    planeNeedsBendMesh(plane) ? LAYER_BEND_SEGMENTS : 1,
+  )
+  const geometry = new THREE.PlaneGeometry(
+    textureRect.width,
+    textureRect.height,
+    segments,
+    segments,
+  )
+  if (segments > 1) applyPlaneBendGeometry(geometry, plane)
+  return geometry
+}
+
 function paintVectorLayerToCanvas(
   ctx: CanvasRenderingContext2D,
   node: VectorNode,
   width: number,
   height: number,
+  anim?: AnimatedValue,
 ): void {
-  const trim = vectorTrimState(node)
-  const preserved = getPreservedVectorSource(node, trim)
+  const displayed = resolveDisplayedVectorNode(node, anim)
+  const trim = vectorTrimState(displayed)
+  const preserved = getPreservedVectorSource(displayed, trim)
   if (preserved) {
     const image = getCachedTextureImage(preserved.dataUrl)
     if (image.complete && image.naturalWidth > 0) {
@@ -6223,5 +6268,5 @@ function paintVectorLayerToCanvas(
       return
     }
   }
-  paintVectorNodeToCanvas(ctx, node, width, height, trim)
+  paintVectorNodeToCanvas(ctx, displayed, width, height, trim)
 }

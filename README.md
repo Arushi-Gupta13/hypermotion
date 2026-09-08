@@ -2,7 +2,7 @@
 
 > A motion design tool with Figma's layout brain.
 
-[hypermotion.app](https://hypermotion.app) · open source · Apache 2.0 · macOS (Windows coming soon)
+[hypermotion.app](https://hypermotion.app) · open source · Apache 2.0 · macOS and Windows
 
 Jitter excels at the timeline. Figma excels at layout. hyper-motion is
 the first to bring them together. Auto-layout containers that push
@@ -59,7 +59,12 @@ Safari / Brave / Chrome add to downloaded files, and
 downloaded one). Apple Developer signing + notarization — which removes
 both steps entirely — is on the v0.2 roadmap.
 
-> Windows build is not shipping yet. Track upcoming platform support in releases.
+### Windows
+
+Download the NSIS installer (`hyper-motion Setup *.exe`) from
+[GitHub Releases](https://github.com/psiddharthdesign/hypermotion/releases).
+The research-preview build is unsigned, so Windows SmartScreen may warn on
+first open — choose **More info**, then **Run anyway**.
 
 ### Build from source
 
@@ -87,7 +92,7 @@ Payload v2 imports supported artwork as native vector-backed layers and retains
 the canonical point/segment graph, Bézier controls, transforms, ordered paints,
 gradient metadata, and detailed strokes. Version 1 payloads remain compatible,
 while complex constructs keep a sanitized SVG fallback for visual fidelity.
-Direct point editing remains a follow-up. Contributor source lives in
+Double-click an editable vector to move anchors and Bézier handles. Contributor source lives in
 [`figma-plugin/`](./figma-plugin).
 
 Full step-by-step at [hypermotion.app/docs#figma-plugin](https://hypermotion.app/docs#figma-plugin).

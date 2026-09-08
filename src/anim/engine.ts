@@ -9,6 +9,7 @@ import type {
   TrackId,
   Transform,
   VariantSelection,
+  VectorDocument,
 } from '@/scene'
 import type { SceneAPI } from '@/scene/doc'
 import {
@@ -24,6 +25,7 @@ import {
   type LayerMotionPath,
 } from './layerMotionPath'
 import type { TextAnimationConfig } from './textAnimations'
+import { lerpVectorDocuments } from '@/scene/vector'
 
 /**
  * Animation engine — the only thing in the codebase allowed to drive
@@ -175,6 +177,16 @@ export interface AnimatedValue {
   vhsNoise?: number
   vhsScanlines?: number
   vhsColorBleed?: number
+  vectorFill?: string
+  vectorGeometry?: VectorDocument
+  bendTl?: number
+  bendTr?: number
+  bendBr?: number
+  bendBl?: number
+  bendTop?: number
+  bendRight?: number
+  bendBottom?: number
+  bendLeft?: number
 }
 
 /** Empty snapshot value — no tracks means no overrides. */
@@ -652,6 +664,12 @@ function applyTrack(
       // String / variant values on non-color tracks step.
       writeProperty(track.propertyId, u < 1 ? av : bv, into)
     }
+  } else if (
+    descriptor?.interpolation === 'path' &&
+    isVectorDocument(av) &&
+    isVectorDocument(bv)
+  ) {
+    writeProperty(track.propertyId, lerpVectorDocuments(av, bv, u), into)
   } else {
     // Mixed or unsupported value shapes — step.
     writeProperty(track.propertyId, u < 1 ? av : bv, into)
@@ -736,6 +754,14 @@ function writeProperty(
   // doesn't drop it.
   if (id === 'appearance.fill') {
     if (typeof value === 'string') into.fill = value
+    return
+  }
+  if (id === 'vector.fill') {
+    if (typeof value === 'string') into.vectorFill = value
+    return
+  }
+  if (id === 'vector.geometry') {
+    if (isVectorDocument(value)) into.vectorGeometry = value
     return
   }
   if (id === 'appearance.blendMode') {
@@ -995,10 +1021,40 @@ function writeProperty(
     case 'camera.vhsColorBleed':
       into.vhsColorBleed = value
       break
+    case 'bend.tl':
+      into.bendTl = value
+      break
+    case 'bend.tr':
+      into.bendTr = value
+      break
+    case 'bend.br':
+      into.bendBr = value
+      break
+    case 'bend.bl':
+      into.bendBl = value
+      break
+    case 'bend.top':
+      into.bendTop = value
+      break
+    case 'bend.right':
+      into.bendRight = value
+      break
+    case 'bend.bottom':
+      into.bendBottom = value
+      break
+    case 'bend.left':
+      into.bendLeft = value
+      break
     // Other PropertyIds are not represented by AnimatedValue yet.
     default:
       break
   }
+}
+
+function isVectorDocument(value: unknown): value is VectorDocument {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const doc = value as VectorDocument
+  return doc.version === 1 && Array.isArray(doc.items)
 }
 
 function variantSelection(value: unknown): VariantSelection | null {

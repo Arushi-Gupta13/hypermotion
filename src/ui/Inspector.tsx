@@ -36,10 +36,14 @@ import {
   clampLayerBlurAmount,
   effectBlurPropertyId,
   effectStableId,
+  isEditableVectorNode,
+  mergeLayerBend,
   normalizeCameraScrollSensitivity,
   normalizeEllipseArc,
   normalizeLayerZIndex,
   normalizeLayerDeformation,
+  primaryVectorFillColor,
+  applyVectorFillColor,
   useSceneAPI,
   useSceneVersion,
 } from '@/scene'
@@ -69,6 +73,8 @@ import type {
   Interaction,
   InteractionEventKind,
   VariantTransition,
+  VectorNode,
+  LayerBend,
 } from '@/scene'
 import { isImageFile } from '@/ui/importImage'
 import {
@@ -5188,6 +5194,14 @@ function NodeDetails({ node, api }: { node: Node; api: SceneAPI }) {
         <>{/* camera path emits its own sections below */}</>
       )}
 
+      {node.kind === 'vector' ? (
+        <VectorSection node={node} api={api} />
+      ) : null}
+
+      {node.kind !== 'camera' && node.kind !== 'audio' ? (
+        <LayerBendSection node={node} api={api} />
+      ) : null}
+
       {node.kind !== 'camera' && (
         <EffectsSection
           nodeId={node.id}
@@ -8736,6 +8750,166 @@ function ImageSection({ node, api }: { node: ImageNode; api: SceneAPI }) {
           width="w-full"
         />
       </FieldRow>
+    </Section>
+  )
+}
+
+function VectorSection({
+  node,
+  api,
+}: {
+  node: VectorNode
+  api: SceneAPI
+}) {
+  const setEditingVectorId = useUI((s) => s.setEditingVectorId)
+  const editingVectorId = useUI((s) => s.editingVectorId)
+  const anim = getAnimEngine().getSnapshot()[node.id]
+  const displayedFill =
+    anim?.vectorFill ?? primaryVectorFillColor(node.vector)
+  const editable = isEditableVectorNode(node)
+  const fidelity =
+    node.importFidelity === 'editable'
+      ? 'Editable paths'
+      : node.importFidelity === 'preserved'
+        ? 'Preserved SVG — not point-editable'
+        : 'Raster fallback — not point-editable'
+
+  return (
+    <Section title="Vector">
+      <p className="text-[11px] leading-4 text-text-muted">{fidelity}</p>
+      {editable ? (
+        <button
+          type="button"
+          className="rounded px-2 py-1 text-left text-[11px] text-text hover:bg-panel-raised"
+          onClick={() =>
+            setEditingVectorId(editingVectorId === node.id ? null : node.id)
+          }
+        >
+          {editingVectorId === node.id
+            ? 'Done editing points'
+            : 'Edit points and handles'}
+        </button>
+      ) : null}
+      <FieldRow
+        label="Fill"
+        keyframe={
+          displayedFill ? (
+            <KeyframeButton
+              nodeId={node.id}
+              propertyId="vector.fill"
+              currentValue={displayedFill}
+            />
+          ) : null
+        }
+      >
+        <ColorField
+          value={displayedFill}
+          onCommit={(color) => {
+            if (!color) return
+            const next = applyVectorFillColor(node.vector, color)
+            const ui = useUI.getState()
+            api.doc.transact(() => {
+              api.setNodeProperty(node.id, 'vector', next)
+              if (ui.recording) {
+                recordKeyframesForPatch(api, node.id, ui.playhead, 'vector', {
+                  fill: color,
+                })
+              } else {
+                stampToActiveTracksForPatch(
+                  api,
+                  node.id,
+                  ui.playhead,
+                  'vector',
+                  { fill: color },
+                )
+              }
+            }, UNDOABLE_GESTURE_ORIGIN)
+          }}
+        />
+      </FieldRow>
+      <FieldRow
+        label="Shape"
+        keyframe={
+          editable ? (
+            <KeyframeButton
+              nodeId={node.id}
+              propertyId="vector.geometry"
+              currentValue={node.vector}
+            />
+          ) : null
+        }
+      >
+        <span className="text-[11px] text-text-dim">
+          {editable
+            ? 'Double-click the layer to morph with handles'
+            : 'Import as editable SVG to morph'}
+        </span>
+      </FieldRow>
+    </Section>
+  )
+}
+
+function LayerBendSection({
+  node,
+  api,
+}: {
+  node: Node
+  api: SceneAPI
+}) {
+  const anim = getAnimEngine().getSnapshot()[node.id]
+  const bend = mergeLayerBend(node.layerBend, {
+    tl: anim?.bendTl,
+    tr: anim?.bendTr,
+    br: anim?.bendBr,
+    bl: anim?.bendBl,
+    top: anim?.bendTop,
+    right: anim?.bendRight,
+    bottom: anim?.bendBottom,
+    left: anim?.bendLeft,
+  })
+  const patchBend = (patch: Partial<LayerBend>) => {
+    const next = mergeLayerBend(node.layerBend, patch)
+    const ui = useUI.getState()
+    api.doc.transact(() => {
+      api.setNodeProperty(node.id, 'layerBend', next)
+      if (ui.recording) {
+        recordKeyframesForPatch(api, node.id, ui.playhead, 'bend', patch)
+      } else {
+        stampToActiveTracksForPatch(api, node.id, ui.playhead, 'bend', patch)
+      }
+    }, UNDOABLE_GESTURE_ORIGIN)
+  }
+  const rows: Array<{ label: string; key: keyof LayerBend; propertyId: 'bend.tl' | 'bend.tr' | 'bend.br' | 'bend.bl' | 'bend.top' | 'bend.right' | 'bend.bottom' | 'bend.left' }> = [
+    { label: 'Top left', key: 'tl', propertyId: 'bend.tl' },
+    { label: 'Top right', key: 'tr', propertyId: 'bend.tr' },
+    { label: 'Bottom right', key: 'br', propertyId: 'bend.br' },
+    { label: 'Bottom left', key: 'bl', propertyId: 'bend.bl' },
+    { label: 'Top', key: 'top', propertyId: 'bend.top' },
+    { label: 'Right', key: 'right', propertyId: 'bend.right' },
+    { label: 'Bottom', key: 'bottom', propertyId: 'bend.bottom' },
+    { label: 'Left', key: 'left', propertyId: 'bend.left' },
+  ]
+  return (
+    <Section title="Layer bend">
+      {rows.map((row) => (
+        <KeyframeSliderRow
+          key={row.key}
+          label={row.label}
+          value={bend[row.key]}
+          onCommit={(value) => patchBend({ [row.key]: value })}
+          min={-400}
+          max={400}
+          step={1}
+          suffix="px"
+          keyframe={
+            <KeyframeButton
+              nodeId={node.id}
+              propertyId={row.propertyId}
+              currentValue={bend[row.key]}
+            />
+          }
+        />
+      ))}
     </Section>
   )
 }

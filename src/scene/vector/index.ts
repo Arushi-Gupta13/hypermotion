@@ -10,6 +10,20 @@ export {
 } from './model'
 export type { CreateVectorItemOptions } from './model'
 export {
+  applyVectorFillColor,
+  cloneVectorDocument,
+  isEditableVectorNode,
+  lerpVectorDocuments,
+  listVectorEditHandles,
+  moveVectorAnchor,
+  moveVectorHandle,
+  primaryVectorFillColor,
+  vectorDocumentsCompatible,
+  vectorLocalToViewBox,
+  vectorViewBoxToLocal,
+} from './edit'
+export type { VectorEditPart } from './edit'
+export {
   VectorPathBuilder,
   parseSvgPathData,
   vectorGeometryToPathData,

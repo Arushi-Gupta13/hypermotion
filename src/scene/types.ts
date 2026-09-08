@@ -578,6 +578,23 @@ interface NodeBase {
   motionPath?: LayerMotionPath | null
   /** Optional non-destructive layer deformation evaluated by the GPU renderer. */
   deformation?: LayerDeformation | null
+  /**
+   * Simple parent-space layer bend. Corner and edge values are Z offsets in
+   * composition pixels. Children sample the same field so they follow the
+   * parent surface.
+   */
+  layerBend?: LayerBend
+}
+
+export interface LayerBend {
+  tl: number
+  tr: number
+  br: number
+  bl: number
+  top: number
+  right: number
+  bottom: number
+  left: number
 }
 
 export interface FrameNode extends NodeBase {
@@ -637,9 +654,11 @@ export interface VectorPosition {
  * A stable anchor in a vector network. Cubic handles live on segments rather
  * than anchors so one point can participate in branching Figma networks.
  */
+export type VectorHandleMode = 'mirrored' | 'aligned' | 'independent'
+
 export interface VectorPoint extends VectorPosition {
   id: string
-  handleMode?: 'mirrored' | 'aligned' | 'independent'
+  handleMode?: VectorHandleMode
   cornerRadius?: number
 }
 
@@ -1360,6 +1379,18 @@ export type PropertyId =
   | 'appearance.fill'
   | 'appearance.blendMode'
   | EffectBlurPropertyId
+  // native vector appearance and path morphs
+  | 'vector.fill'
+  | 'vector.geometry'
+  // simple layer bend — post-layout mesh deform
+  | 'bend.tl'
+  | 'bend.tr'
+  | 'bend.br'
+  | 'bend.bl'
+  | 'bend.top'
+  | 'bend.right'
+  | 'bend.bottom'
+  | 'bend.left'
   // native ellipse geometry — post-layout, cheap
   | 'shape.arcStart'
   | 'shape.arcSweep'
@@ -1416,7 +1447,12 @@ export interface KeyframeEasingPreset {
  * Keyframe values are typed dynamically — the shape depends on the
  * track's PropertyId. Validated at the anim-engine boundary.
  */
-export type KeyframeValue = number | string | VariantSelection | FlexDirection
+export type KeyframeValue =
+  | number
+  | string
+  | VariantSelection
+  | FlexDirection
+  | VectorDocument
 
 export interface Keyframe {
   id: KeyframeId

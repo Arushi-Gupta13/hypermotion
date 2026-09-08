@@ -141,6 +141,22 @@ const CAMERA_PROP_IDS: Partial<Record<string, PropertyId>> = {
   vhsColorBleed: 'camera.vhsColorBleed',
 }
 
+const VECTOR_PROP_IDS: Partial<Record<string, PropertyId>> = {
+  fill: 'vector.fill',
+  geometry: 'vector.geometry',
+}
+
+const BEND_PROP_IDS: Partial<Record<string, PropertyId>> = {
+  tl: 'bend.tl',
+  tr: 'bend.tr',
+  br: 'bend.br',
+  bl: 'bend.bl',
+  top: 'bend.top',
+  right: 'bend.right',
+  bottom: 'bend.bottom',
+  left: 'bend.left',
+}
+
 export type PatchGroup =
   | 'transform'
   | 'appearance'
@@ -150,6 +166,8 @@ export type PatchGroup =
   | 'motionPath'
   | 'deformation'
   | 'layout'
+  | 'vector'
+  | 'bend'
 
 export interface PatchKeyframeValue {
   propertyId: PropertyId
@@ -221,7 +239,7 @@ function keyframeValueForPatch(
   propertyId: PropertyId,
   value: unknown,
 ): KeyframeValue | null | undefined {
-  if (propertyId !== 'appearance.fill') {
+  if (propertyId !== 'appearance.fill' && propertyId !== 'vector.fill') {
     return value as KeyframeValue | null | undefined
   }
   if (
@@ -308,5 +326,9 @@ function propertyMapForGroup(
           ? DEFORMATION_PROP_IDS
         : group === 'layout'
           ? LAYOUT_PROP_IDS
-          : CAMERA_PROP_IDS
+          : group === 'vector'
+            ? VECTOR_PROP_IDS
+            : group === 'bend'
+              ? BEND_PROP_IDS
+              : CAMERA_PROP_IDS
 }

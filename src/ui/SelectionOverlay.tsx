@@ -8,6 +8,8 @@ import type { SolvedLayout } from '@/layout'
 import type { AnimatedValue } from '@/ui/hooks/useAnimatedValues'
 import type { InheritedAnim } from '@/ui/canvasRenderHelpers'
 import { ResizeHandles } from '@/ui/ResizeHandles'
+import { VectorEditOverlay } from '@/ui/VectorEditOverlay'
+import { isEditableVectorNode } from '@/scene'
 import { nodeGeometryPreviewStore } from '@/ui/nodeGeometryPreviewStore'
 import { nodeGeometryPreviewRect } from '@/ui/nodeGeometryPreviewRect'
 
@@ -67,12 +69,20 @@ export function SelectionOverlay({
   // inspector's Width / Height.
   const singleSelection =
     selection.length === 1 ? selection[0]! : null
+  const editingVectorId = useUI((s) => s.editingVectorId)
   const handleNode = singleSelection ? api.getNode(singleSelection) : null
+  const editingVector =
+    handleNode &&
+    handleNode.id === editingVectorId &&
+    isEditableVectorNode(handleNode)
+      ? handleNode
+      : null
   const showHandles =
     !!handleNode &&
     handleNode.id !== rootId &&
     !handleNode.locked &&
-    'size' in handleNode
+    'size' in handleNode &&
+    !editingVector
 
   return (
     <>
@@ -127,6 +137,7 @@ export function SelectionOverlay({
             // pointer events. Without this the outline would swallow
             // drags aimed at the node underneath.
             className="pointer-events-none absolute"
+            data-selection-node={id}
             style={{
               left: rect.x,
               top: rect.y,
@@ -141,7 +152,33 @@ export function SelectionOverlay({
               boxShadow: `0 0 0 ${strokeWidth / 3}px ${outlineSoft} inset`,
             }}
           >
-            {isSingle && showHandles ? (
+            {isSingle && editingVector ? (
+              <svg
+                className="pointer-events-none absolute inset-0 overflow-visible"
+                width={rect.width}
+                height={rect.height}
+              >
+                <VectorEditOverlay
+                  node={editingVector}
+                  zoom={zoom}
+                  projection={{
+                    clientToLocal: (clientX, clientY) => {
+                      const host = document.querySelector(
+                        `[data-selection-node="${id}"]`,
+                      )
+                      if (!(host instanceof HTMLElement)) return null
+                      const box = host.getBoundingClientRect()
+                      if (box.width < 1 || box.height < 1) return null
+                      return {
+                        x: ((clientX - box.left) / box.width) * rect.width,
+                        y: ((clientY - box.top) / box.height) * rect.height,
+                      }
+                    },
+                    localToScreen: (local) => local,
+                  }}
+                />
+              </svg>
+            ) : isSingle && showHandles ? (
               <ResizeHandles
                 nodeId={id}
                 rectWidth={rect.width}

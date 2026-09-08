@@ -9,6 +9,7 @@ import type {
   FrameNode,
   ImageNode,
   Keyframe,
+  LayerBend,
   Layout,
   LayerDeformation,
   Node,
@@ -51,6 +52,7 @@ import { removeLegacy3DObjects } from '@/scene/removeLegacy3DObjects'
 import { migrateCursorComponents } from '@/scene/builtins/migrateCursorComponent'
 import { normalizeLayerEffects } from '@/scene/effects'
 import { normalizeEllipseArc } from '@/scene/ellipseArc'
+import { normalizeLayerBend } from '@/scene/layerBend'
 import { normalizeLayerZIndex } from '@/scene/zIndex'
 import { normalizeLayerDeformation } from '@/scene/deformation'
 
@@ -248,6 +250,7 @@ export interface NodeBaseMutable {
   isMask: boolean
   motionPath: LayerMotionPath | null
   deformation: LayerDeformation | null
+  layerBend: LayerBend
   text: string
   fontFamily: string
   fontSize: number
@@ -677,6 +680,7 @@ export function createSceneAPI(doc: Y.Doc = new Y.Doc()): SceneAPI {
       proceduralTimeOffset: finiteNumber(y.get('proceduralTimeOffset') as number | undefined, 0),
       motionPath: normalizeLayerMotionPath(y.get('motionPath')),
       deformation: normalizeLayerDeformation(y.get('deformation')),
+      layerBend: normalizeLayerBend(y.get('layerBend')),
     }
     switch (kind) {
       case 'frame':
@@ -1221,6 +1225,12 @@ export function createSceneAPI(doc: Y.Doc = new Y.Doc()): SceneAPI {
             (props as { deformation?: LayerDeformation | null })?.deformation,
           ),
         )
+        y.set(
+          'layerBend',
+          normalizeLayerBend(
+            (props as { layerBend?: LayerBend })?.layerBend,
+          ),
+        )
 
         // kind-specific defaults
         if (kind === 'frame' || kind === 'component') {
@@ -1585,6 +1595,10 @@ export function createSceneAPI(doc: Y.Doc = new Y.Doc()): SceneAPI {
         }
         if (key === 'deformation') {
           y.set('deformation', normalizeLayerDeformation(value))
+          return
+        }
+        if (key === 'layerBend') {
+          y.set('layerBend', normalizeLayerBend(value))
           return
         }
         if (key === 'zIndex') {
