@@ -10,6 +10,8 @@ import type {
   Transform,
   VariantSelection,
   VectorDocument,
+  VectorPaint,
+  VectorStroke,
 } from '@/scene'
 import type { SceneAPI } from '@/scene/doc'
 import {
@@ -25,7 +27,11 @@ import {
   type LayerMotionPath,
 } from './layerMotionPath'
 import type { TextAnimationConfig } from './textAnimations'
-import { lerpVectorDocuments } from '@/scene/vector'
+import {
+  lerpMorphedVectorDocuments,
+  lerpVectorPaint,
+  lerpVectorStroke,
+} from '@/scene/vector'
 
 /**
  * Animation engine — the only thing in the codebase allowed to drive
@@ -177,7 +183,8 @@ export interface AnimatedValue {
   vhsNoise?: number
   vhsScanlines?: number
   vhsColorBleed?: number
-  vectorFill?: string
+  vectorFill?: VectorPaint
+  vectorStroke?: VectorStroke
   vectorGeometry?: VectorDocument
   bendTl?: number
   bendTr?: number
@@ -669,7 +676,19 @@ function applyTrack(
     isVectorDocument(av) &&
     isVectorDocument(bv)
   ) {
-    writeProperty(track.propertyId, lerpVectorDocuments(av, bv, u), into)
+    writeProperty(track.propertyId, lerpMorphedVectorDocuments(av, bv, u), into)
+  } else if (
+    descriptor?.interpolation === 'paint' &&
+    isVectorPaint(av) &&
+    isVectorPaint(bv)
+  ) {
+    writeProperty(track.propertyId, lerpVectorPaint(av, bv, u), into)
+  } else if (
+    descriptor?.interpolation === 'stroke' &&
+    isVectorStroke(av) &&
+    isVectorStroke(bv)
+  ) {
+    writeProperty(track.propertyId, lerpVectorStroke(av, bv, u), into)
   } else {
     // Mixed or unsupported value shapes — step.
     writeProperty(track.propertyId, u < 1 ? av : bv, into)
@@ -757,7 +776,11 @@ function writeProperty(
     return
   }
   if (id === 'vector.fill') {
-    if (typeof value === 'string') into.vectorFill = value
+    if (isVectorPaint(value)) into.vectorFill = value
+    return
+  }
+  if (id === 'vector.stroke') {
+    if (isVectorStroke(value)) into.vectorStroke = value
     return
   }
   if (id === 'vector.geometry') {
@@ -1055,6 +1078,22 @@ function isVectorDocument(value: unknown): value is VectorDocument {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const doc = value as VectorDocument
   return doc.version === 1 && Array.isArray(doc.items)
+}
+
+const VECTOR_PAINT_KINDS = new Set([
+  'solid', 'linear', 'radial', 'conic', 'image',
+])
+
+function isVectorPaint(value: unknown): value is VectorPaint {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const paint = value as VectorPaint
+  return VECTOR_PAINT_KINDS.has(paint.kind)
+}
+
+function isVectorStroke(value: unknown): value is VectorStroke {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const stroke = value as VectorStroke
+  return isVectorPaint(stroke.paint) && typeof stroke.width === 'number'
 }
 
 function variantSelection(value: unknown): VariantSelection | null {

@@ -23,6 +23,17 @@ describe('WebGL plane texture policy', () => {
     expect(viewportPixelRatioForZoom(1, 2, 1104, 908)).toBe(2)
   })
 
+  it('sharpens past 100% zoom on a small viewport instead of clamping at the old flat 2x ceiling', () => {
+    // A small canvas has huge framebuffer headroom (MAX_EDITOR_FRAMEBUFFER_*),
+    // so zooming a Retina display in past 100% should keep gaining density
+    // instead of going soft the moment zoom*dpr crosses 2.
+    expect(viewportPixelRatioForZoom(1.5, 2, 800, 600)).toBe(3)
+    expect(viewportPixelRatioForZoom(2, 2, 800, 600)).toBe(3)
+    // A large artboard still stays bounded by the real pixel budget, not the
+    // raised ceiling — the framebuffer-size safety net is unchanged.
+    expect(viewportPixelRatioForZoom(2, 2, 3840, 2160)).toBe(1)
+  })
+
   it('uses a bounded realtime framebuffer and restores preview density outside playback', () => {
     expect(playbackPixelRatio(1, 3840, 2160)).toBe(0.5)
     expect(playbackPixelRatio(2, 1920, 1080)).toBe(1)

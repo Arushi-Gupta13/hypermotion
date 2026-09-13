@@ -196,18 +196,35 @@ function FillPopover({
       Math.max(margin, rect.right - width),
       Math.max(margin, window.innerWidth - width - margin),
     )
-    const preferredTop = rect.bottom + 6
-    const maxTop =
-      height > 0 ? Math.max(margin, window.innerHeight - height - margin) : preferredTop
-    const top = Math.min(
-      Math.max(margin, preferredTop),
-      maxTop,
-    )
+    const spaceBelow = window.innerHeight - rect.bottom - margin
+    // Switching from Solid to a gradient tab (angle + a growing stops list)
+    // can make the popover far taller than what fit below a low anchor.
+    // Flip to open upward, ending at the anchor, when there's more room
+    // above than below and it still wouldn't fit going down.
+    const openUpward = height > spaceBelow && rect.top - margin > spaceBelow
+    const top = openUpward
+      ? Math.max(margin, rect.top - height - 6)
+      : Math.min(
+          Math.max(margin, rect.bottom + 6),
+          Math.max(margin, window.innerHeight - height - margin),
+        )
     setPosition({ left, top })
   }, [anchor])
 
   useLayoutEffect(() => {
     updatePosition()
+  }, [updatePosition])
+
+  // Re-run whenever the popover's own content height changes — tab
+  // switches (Solid → Linear) and stop add/remove both resize it, and the
+  // position picked for the old height would otherwise stick around and
+  // force an unnecessary internal scroll against the wrong boundary.
+  useLayoutEffect(() => {
+    const el = popRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => updatePosition())
+    observer.observe(el)
+    return () => observer.disconnect()
   }, [updatePosition])
 
   useEffect(() => {

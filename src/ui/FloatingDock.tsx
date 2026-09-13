@@ -8,6 +8,7 @@ import {
   ImageIcon,
   MousePointer2,
   MousePointerClick,
+  Smartphone,
   Sparkles,
   Square,
   Type,
@@ -25,6 +26,12 @@ import { PaperShaderPicker } from '@/ui/PaperShaderPicker'
 import { ensureCursorComponent } from '@/scene/builtins/cursorComponent'
 import { CURSOR_COMPONENT_SIZE } from '@/scene/builtins/cursorAssets'
 import { instantiateComponent } from '@/ui/actions'
+import {
+  DEVICE_MOCKUP_SPECS,
+  insertDeviceMockup,
+  type DeviceMockupKind,
+} from '@/scene/builtins/deviceMockups'
+import { DeviceMockupPicker } from '@/ui/DeviceMockupPicker'
 
 /**
  * FloatingDock — the tool palette as a floating pill at the bottom of
@@ -158,6 +165,20 @@ export function FloatingDock() {
     setSelection([id])
     setTool('select')
   }
+  const insertMockup = (kind: DeviceMockupKind) => {
+    const rootId = api.getRoot()
+    if (!rootId) return
+    const meta = api.getMeta()
+    const spec = DEVICE_MOCKUP_SPECS[kind]
+    const id = insertDeviceMockup(api, rootId, kind, {
+      x: Math.round((meta.canvas.width - spec.width) / 2),
+      y: Math.round((meta.canvas.height - spec.height) / 2),
+    })
+    setSelection([id])
+    setTool('select')
+  }
+  const [mockupPickerAnchor, setMockupPickerAnchor] =
+    useState<HTMLButtonElement | null>(null)
   return (
     <div
       // The dock excludes itself from `data-export-hide` because it's
@@ -232,6 +253,31 @@ export function FloatingDock() {
       >
         <MousePointerClick size={18} />
       </button>
+      <button
+        type="button"
+        title="Add device mockup…"
+        aria-expanded={Boolean(mockupPickerAnchor)}
+        aria-haspopup="dialog"
+        onClick={(event) => {
+          const button = event.currentTarget
+          setMockupPickerAnchor((current) => (current ? null : button))
+        }}
+        className={[
+          'flex h-8 w-8 items-center justify-center rounded-[var(--radius-control)] transition-colors',
+          mockupPickerAnchor
+            ? 'bg-accent text-white shadow-sm'
+            : 'text-text-muted hover:bg-control hover:text-text',
+        ].join(' ')}
+      >
+        <Smartphone size={18} />
+      </button>
+      {mockupPickerAnchor ? (
+        <DeviceMockupPicker
+          anchor={mockupPickerAnchor}
+          onSelect={insertMockup}
+          onClose={() => setMockupPickerAnchor(null)}
+        />
+      ) : null}
       <button
         type="button"
         title="Add Paper shader…"

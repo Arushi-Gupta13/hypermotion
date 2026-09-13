@@ -18,6 +18,10 @@ import {
   commitNodeGeometryPreviews,
   nodeGeometryPreviewStore,
 } from '@/ui/nodeGeometryPreviewStore'
+import {
+  isDeviceMockupRoot,
+  rescaleDeviceMockupChildren,
+} from '@/scene/builtins/deviceMockups'
 
 /**
  * Eight-handle resize gizmo overlaid on a selected node.
@@ -182,6 +186,20 @@ export function ResizeHandles({
             (committedNodeId, preview) => {
               const patch = preview.size ?? {}
               if (Object.keys(patch).length === 0) return
+              // A mockup's Bezel/Screen/chrome children are absolute-
+              // positioned fixed geometry — nothing else here makes them
+              // follow this resize. Rescale them by the same ratio so
+              // dragging a corner visibly resizes the whole composite.
+              if (isDeviceMockupRoot(api, committedNodeId)) {
+                rescaleDeviceMockupChildren(
+                  api,
+                  committedNodeId,
+                  d.w0,
+                  d.h0,
+                  typeof patch.width === 'number' ? patch.width : d.w0,
+                  typeof patch.height === 'number' ? patch.height : d.h0,
+                )
+              }
               if (ui.recording) {
                 recordKeyframesForPatch(
                   api,

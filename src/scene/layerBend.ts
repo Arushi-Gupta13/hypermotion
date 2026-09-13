@@ -46,7 +46,17 @@ export function mergeLayerBend(
   base: LayerBend | undefined,
   patch: Partial<LayerBend> | undefined,
 ): LayerBend {
-  return normalizeLayerBend({ ...DEFAULT_LAYER_BEND, ...base, ...patch })
+  const cleaned: Partial<LayerBend> = {}
+  if (patch) {
+    for (const key of Object.keys(DEFAULT_LAYER_BEND) as Array<
+      keyof LayerBend
+    >) {
+      if (typeof patch[key] === 'number' && Number.isFinite(patch[key])) {
+        cleaned[key] = patch[key]
+      }
+    }
+  }
+  return normalizeLayerBend({ ...base, ...cleaned })
 }
 
 /**
@@ -54,7 +64,7 @@ export function mergeLayerBend(
  * Front-facing cameras barely show Z-only displacement; this keeps the
  * silhouette changing without requiring a camera orbit.
  */
-export const LAYER_BEND_INPLANE = 0.4
+export const LAYER_BEND_INPLANE = 0.85
 
 /**
  * Evaluate Z displacement in parent-local UV space (u,v in 0..1, v down).

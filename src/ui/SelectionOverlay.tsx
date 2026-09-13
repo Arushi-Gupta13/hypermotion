@@ -12,6 +12,10 @@ import { VectorEditOverlay } from '@/ui/VectorEditOverlay'
 import { isEditableVectorNode } from '@/scene'
 import { nodeGeometryPreviewStore } from '@/ui/nodeGeometryPreviewStore'
 import { nodeGeometryPreviewRect } from '@/ui/nodeGeometryPreviewRect'
+import {
+  isDeviceMockupRoot,
+  mockupGhostColors,
+} from '@/scene/builtins/deviceMockups'
 
 function isEffectivelyVisible(api: SceneAPI, id: NodeId): boolean {
   const visited = new Set<NodeId>()
@@ -152,6 +156,34 @@ export function SelectionOverlay({
               boxShadow: `0 0 0 ${strokeWidth / 3}px ${outlineSoft} inset`,
             }}
           >
+            {isSingle &&
+            geometryPreview[id]?.size &&
+            isDeviceMockupRoot(api, id)
+              ? (() => {
+                  const colors = mockupGhostColors(api, id)
+                  if (!colors) return null
+                  const radius = Math.min(rect.width, rect.height) * 0.12
+                  const screenInset = Math.min(rect.width, rect.height) * 0.018
+                  return (
+                    <div
+                      className="pointer-events-none absolute inset-0"
+                      style={{
+                        borderRadius: radius,
+                        background: colors.bezelColor,
+                      }}
+                    >
+                      <div
+                        className="pointer-events-none absolute"
+                        style={{
+                          inset: screenInset,
+                          borderRadius: Math.max(0, radius - screenInset),
+                          background: colors.screenColor,
+                        }}
+                      />
+                    </div>
+                  )
+                })()
+              : null}
             {isSingle && editingVector ? (
               <svg
                 className="pointer-events-none absolute inset-0 overflow-visible"

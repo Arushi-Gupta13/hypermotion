@@ -1119,6 +1119,8 @@ const SELF_TEXTURE_ANIMATION_KEYS = new Set<keyof AnimatedValue>([
   'arcInnerRadius',
   'textProgress',
   'textTimelineProgress',
+  'vectorGeometry',
+  'vectorFill',
 ])
 
 /**

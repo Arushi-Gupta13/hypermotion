@@ -21,7 +21,7 @@ import type {
  */
 
 export type PropertyGroup = 'transform' | 'deformation' | 'camera' | 'appearance' | 'shape' | 'text' | 'layout' | 'size' | 'semantic' | 'vector' | 'bend'
-export type Interpolation = 'numeric' | 'discrete' | 'color' | 'angle' | 'path'
+export type Interpolation = 'numeric' | 'discrete' | 'color' | 'angle' | 'path' | 'paint' | 'stroke'
 
 export interface PropertyDescriptor {
   id: PropertyId
@@ -328,7 +328,24 @@ export const PROPERTIES: Record<StaticPropertyId, PropertyDescriptor> = {
   },
   'vector.fill': {
     id: 'vector.fill', group: 'vector', label: 'Vector Fill',
-    layoutAffecting: false, interpolation: 'color', defaultValue: '#000000',
+    layoutAffecting: false, interpolation: 'paint',
+    defaultValue: {
+      id: 'fill-1', kind: 'solid', color: '#000000',
+      visible: true, opacity: 1, blendMode: 'normal',
+    },
+  },
+  'vector.stroke': {
+    id: 'vector.stroke', group: 'vector', label: 'Vector Stroke',
+    layoutAffecting: false, interpolation: 'stroke',
+    defaultValue: {
+      id: 'stroke-1',
+      paint: {
+        id: 'stroke-paint-1', kind: 'solid', color: '#000000',
+        visible: true, opacity: 1, blendMode: 'normal',
+      },
+      width: 1, align: 'center', cap: 'butt', join: 'miter',
+      miterLimit: 4, dash: [], dashOffset: 0, opacity: 1, visible: true,
+    },
   },
   'vector.geometry': {
     id: 'vector.geometry', group: 'vector', label: 'Shape',

@@ -8,6 +8,8 @@ import type {
   SceneAPI,
   VariantSelection,
   VectorDocument,
+  VectorPaint,
+  VectorStroke,
 } from '@/scene'
 import { getAnimEngine } from '@/anim'
 import type { TextAnimationConfig } from '@/anim'
@@ -119,7 +121,8 @@ export interface AnimatedValue {
   vhsNoise?: number
   vhsScanlines?: number
   vhsColorBleed?: number
-  vectorFill?: string
+  vectorFill?: VectorPaint
+  vectorStroke?: VectorStroke
   vectorGeometry?: VectorDocument
   bendTl?: number
   bendTr?: number

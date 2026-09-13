@@ -32,4 +32,10 @@ describe('layer bend field', () => {
     expect(dx).toBeGreaterThan(0)
     expect(dy).toBeLessThan(0)
   })
+
+  it('does not zero static bend when animated fields are missing', () => {
+    expect(
+      mergeLayerBend({ tl: 180 }, { tl: undefined, top: undefined }).tl,
+    ).toBe(180)
+  })
 })

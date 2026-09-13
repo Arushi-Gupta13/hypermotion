@@ -7,7 +7,14 @@ const MAX_TEXTURE_DIMENSION = 4096
 const MAX_EDITOR_FRAMEBUFFER_DIMENSION = 4096
 const MAX_EDITOR_FRAMEBUFFER_PIXELS = 12_000_000
 const MAX_PLAYBACK_FRAMEBUFFER_PIXELS = 2_500_000
-const VIEWPORT_PIXEL_RATIO_BUCKETS = [0.25, 0.5, 0.75, 1, 1.5, 2] as const
+// The old flat ceiling of 2 clamped `target` before the real, GPU-budget-aware
+// cap below (`framebufferCap`, keyed off actual on-screen canvas size) ever
+// got a say — so a small viewport zoomed in past 100% on a Retina display
+// went soft even though its true framebuffer cost was nowhere near the
+// budget. Raising this ceiling lets `framebufferCap` be the one limiter that
+// actually reflects GPU cost, instead of an arbitrary ratio.
+const MAX_VIEWPORT_PIXEL_RATIO = 3
+const VIEWPORT_PIXEL_RATIO_BUCKETS = [0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3] as const
 
 export interface CachedPlaneTextureState {
   textureKind: 'canvas' | 'video'
@@ -48,7 +55,10 @@ export function viewportPixelRatioForZoom(
   const safeDpr = Number.isFinite(devicePixelRatio)
     ? Math.max(0.25, devicePixelRatio)
     : 1
-  const target = Math.max(0.25, Math.min(2, safeZoom * safeDpr))
+  const target = Math.max(
+    0.25,
+    Math.min(MAX_VIEWPORT_PIXEL_RATIO, safeZoom * safeDpr),
+  )
   const zoomBucket = VIEWPORT_PIXEL_RATIO_BUCKETS.reduce((closest, bucket) =>
     Math.abs(bucket - target) < Math.abs(closest - target) ? bucket : closest,
   )

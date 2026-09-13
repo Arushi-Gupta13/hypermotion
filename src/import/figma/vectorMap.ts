@@ -56,6 +56,9 @@ export function figmaToVectorDocument(
           : node.strokeGeometry ?? []
     geometry = geometryFromPaths(paths)
   }
+  if (!geometry || Object.keys(geometry.segments).length === 0) {
+    geometry = geometryFromSvgMarkup(sanitizedSvg)
+  }
 
   const unsupported = [...(node.unsupported ?? [])]
   if (!geometry || Object.keys(geometry.segments).length === 0) {
@@ -120,12 +123,7 @@ export function figmaToVectorDocument(
     viewBox,
     vector: { version: 1, items: [item] },
     sanitizedSvg,
-    fidelity:
-      node.fidelity === 'preserved' ||
-      node.fidelity === 'partial' ||
-      unsupported.length > 0
-        ? 'preserved'
-        : 'editable',
+    fidelity: Object.keys(geometry.segments).length > 0 ? 'editable' : 'raster-fallback',
     unsupported: unique(unsupported),
   }
 }
@@ -273,6 +271,18 @@ function geometryFromPaths(paths: FigmaCapturedVectorPath[]): VectorGeometry {
   })
   if (regions.length > 0) geometry.regions = regions
   return geometry
+}
+
+function geometryFromSvgMarkup(svg: string): VectorGeometry | null {
+  if (!svg) return null
+  const matches = [...svg.matchAll(/\bd\s*=\s*("([^"]+)"|'([^']+)')/gi)]
+  if (matches.length === 0) return null
+  const paths = matches
+    .map((match) => match[2] ?? match[3] ?? '')
+    .filter((data) => data.trim().length > 0)
+    .map((data) => ({ data, windingRule: 'NONZERO' as const }))
+  const geometry = geometryFromPaths(paths)
+  return Object.keys(geometry.segments).length > 0 ? geometry : null
 }
 
 function readSvgViewBox(svg: string): VectorViewBox | null {

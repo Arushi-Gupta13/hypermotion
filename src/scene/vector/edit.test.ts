@@ -2,14 +2,16 @@
 
 import { describe, expect, it } from 'vitest'
 import {
-  applyVectorFillColor,
+  applyVectorFill,
   isEditableVectorNode,
   lerpVectorDocuments,
+  lerpVectorPaint,
   moveVectorAnchor,
   moveVectorHandle,
   primaryVectorFillColor,
   vectorDocumentsCompatible,
 } from './edit'
+import { lerpMorphedVectorDocuments } from './morph'
 import { createVectorItem, solidVectorPaint } from './model'
 import { VectorPathBuilder } from './path'
 import type { VectorNode } from '@/scene/types'
@@ -111,19 +113,45 @@ describe('vector edit helpers', () => {
       items: [
         createVectorItem({
           id: 'other',
-          geometry: new VectorPathBuilder('other').moveTo(0, 0).lineTo(1, 1).build(),
+          geometry: new VectorPathBuilder('other')
+            .moveTo(40, 10)
+            .lineTo(90, 10)
+            .lineTo(90, 60)
+            .lineTo(40, 60)
+            .closePath()
+            .build(),
         }),
       ],
     }
     expect(lerpVectorDocuments(a, other, 0.25)).toBe(a)
     expect(lerpVectorDocuments(a, other, 1)).toBe(other)
+    const remappedMid = lerpMorphedVectorDocuments(a, other, 0.5)
+    const pid = Object.values(a.items[0]!.geometry.points)[0]!.id
+    expect(remappedMid.items[0]!.geometry.points[pid]!.x).not.toBe(
+      a.items[0]!.geometry.points[pid]!.x,
+    )
   })
 
-  it('rewrites the primary solid fill', () => {
+  it('rewrites the primary fill (solid or gradient)', () => {
     const vector = { version: 1 as const, items: [triangle()] }
     expect(primaryVectorFillColor(vector)).toBe('#ff5500')
-    expect(primaryVectorFillColor(applyVectorFillColor(vector, '#00aa00'))).toBe(
-      '#00aa00',
-    )
+    expect(
+      primaryVectorFillColor(applyVectorFill(vector, solidVectorPaint('#00aa00'))),
+    ).toBe('#00aa00')
+  })
+
+  it('interpolates solid fills through OKLCH and steps mismatched kinds', () => {
+    const from = solidVectorPaint('oklch(0.5 0.2 20)')
+    const to = solidVectorPaint('oklch(0.5 0.2 200)')
+    const mid = lerpVectorPaint(from, to, 0.5)
+    expect(mid.kind).toBe('solid')
+    expect(mid.kind === 'solid' ? mid.color : '').toContain('110.00')
+
+    const gradient: import('@/scene/types').VectorPaint = {
+      id: 'g', kind: 'linear', stops: [{ at: 0, color: '#fff' }, { at: 1, color: '#000' }],
+      start: { x: 0, y: 0 }, end: { x: 1, y: 0 }, visible: true, opacity: 1, blendMode: 'normal',
+    }
+    expect(lerpVectorPaint(from, gradient, 0.4)).toBe(from)
+    expect(lerpVectorPaint(from, gradient, 1)).toBe(gradient)
   })
 })

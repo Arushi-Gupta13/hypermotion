@@ -414,9 +414,7 @@ function pickKind(
         node.primitive?.kind === 'ellipse' &&
         node.fidelity === 'editable'
         ? 'ellipse'
-        : payloadVersion >= 2
-          ? 'vector'
-          : 'image'
+        : 'vector'
     default:
       return null
   }
@@ -542,24 +540,6 @@ function createVector(
   payloadVersion: FigmaPayload['version'],
 ): NodeId | null {
   const mapped = figmaToVectorDocument(node, assets, payloadVersion)
-  const hasVisualFallback = !!node.svg.trim() || !!node.rasterPng
-  if (
-    hasVisualFallback &&
-    (node.fidelity === 'partial' || node.fidelity === 'preserved')
-  ) {
-    // Native geometry remains in the payload for future editing support, but
-    // it cannot represent every Figma vector feature. Prefer the captured SVG
-    // (or PNG when SVG export failed) so partial vectors do not silently lose
-    // donut cut-outs, advanced strokes, filters, or paint effects.
-    return createVectorAsImage(
-      node,
-      api,
-      parentId,
-      transform,
-      appearance,
-      position,
-    )
-  }
   if (!mapped) {
     return createVectorAsImage(node, api, parentId, transform, appearance, position)
   }

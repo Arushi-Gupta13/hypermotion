@@ -1381,6 +1381,7 @@ export type PropertyId =
   | EffectBlurPropertyId
   // native vector appearance and path morphs
   | 'vector.fill'
+  | 'vector.stroke'
   | 'vector.geometry'
   // simple layer bend — post-layout mesh deform
   | 'bend.tl'
@@ -1453,6 +1454,8 @@ export type KeyframeValue =
   | VariantSelection
   | FlexDirection
   | VectorDocument
+  | VectorPaint
+  | VectorStroke
 
 export interface Keyframe {
   id: KeyframeId
