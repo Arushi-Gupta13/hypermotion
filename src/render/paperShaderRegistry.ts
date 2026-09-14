@@ -146,7 +146,8 @@ export function getPaperShaderRenderer(
 export function paperShaderFrame(node: ShaderNode, playhead: number): number {
   const safePlayhead = Number.isFinite(playhead) ? Math.max(0, playhead) : 0
   const safeSpeed = Number.isFinite(node.speed) ? Math.max(0, node.speed) : 0
-  return safePlayhead * 1000 * safeSpeed
+  const offset = Number.isFinite(node.proceduralTimeOffset) ? node.proceduralTimeOffset ?? 0 : 0
+  return Math.max(0, safePlayhead + offset) * 1000 * safeSpeed
 }
 
 function finiteNumber(value: unknown): value is number {

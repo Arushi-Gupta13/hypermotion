@@ -495,6 +495,8 @@ interface NodeBase {
    * view, or export output.
    */
   workspaceOnly?: boolean
+  /** Original timeline origin retained by procedural effects after a scene split. */
+  proceduralTimeOffset?: number
   /**
    * When true, this node acts as a mask for the layer immediately
    * above it among its parent's children — Figma's mask convention,

@@ -229,6 +229,7 @@ export interface SceneAPI {
 export interface NodeBaseMutable {
   name: string
   workspaceOnly: boolean
+  proceduralTimeOffset: number
   componentSourceId: NodeId | null
   componentId: NodeId
   transform: Transform
@@ -670,6 +671,7 @@ export function createSceneAPI(doc: Y.Doc = new Y.Doc()): SceneAPI {
       componentSourceId:
         (y.get('componentSourceId') as NodeId | null | undefined) ?? null,
       workspaceOnly: (y.get('workspaceOnly') as boolean | undefined) ?? false,
+      proceduralTimeOffset: finiteNumber(y.get('proceduralTimeOffset') as number | undefined, 0),
       motionPath: normalizeLayerMotionPath(y.get('motionPath')),
     }
     switch (kind) {
@@ -1202,6 +1204,7 @@ export function createSceneAPI(doc: Y.Doc = new Y.Doc()): SceneAPI {
           (props as { componentSourceId?: NodeId | null })?.componentSourceId ?? null,
         )
         y.set('workspaceOnly', (props as { workspaceOnly?: boolean })?.workspaceOnly ?? false)
+        y.set('proceduralTimeOffset', finiteNumber((props as { proceduralTimeOffset?: number })?.proceduralTimeOffset, 0))
         y.set(
           'motionPath',
           normalizeLayerMotionPath(

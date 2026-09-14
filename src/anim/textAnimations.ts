@@ -636,7 +636,8 @@ export function normalizeTextAnimation(raw: unknown): TextAnimationConfig | null
       value.numberFlowOpacityTimingRatio,
       base.numberFlowOpacityTimingRatio,
     ),
-    startTime: Math.max(0, finiteNumber(value.startTime, base.startTime)),
+    // Scene splits may retain an effect that began before the new local zero.
+    startTime: finiteNumber(value.startTime, base.startTime),
     acceleration: isAcceleration(value.acceleration) ? value.acceleration : base.acceleration,
     easingPresetId: isEasingPresetId(value.easingPresetId) ? value.easingPresetId : base.easingPresetId,
     easingStrength: clampEasingStrength(

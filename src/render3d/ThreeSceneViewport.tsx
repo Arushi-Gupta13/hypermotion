@@ -947,7 +947,7 @@ export function ThreeSceneViewport({
         width,
         height,
         postEffectsPixelRatio,
-        playhead,
+        playhead + (camera.proceduralTimeOffset ?? 0),
       )
       if (postEffectsActive) {
         postEffects.render()
@@ -965,6 +965,7 @@ export function ThreeSceneViewport({
       onFrameRendered?.(renderRequest, renderer.domElement)
     }
   }, [
+    camera.proceduralTimeOffset,
     api,
     planeBuildContext,
     layout,
