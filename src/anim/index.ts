@@ -22,6 +22,11 @@ export type { AnimEngine, AnimatedValue } from './engine'
 export { evaluator } from './easing'
 export type { EasingEvaluator } from './easing'
 export {
+  clearBendAnimation,
+  neutralBendDeformation,
+  resetBendNodes,
+} from './bendReset'
+export {
   addKeyframe,
   removeKeyframe,
   moveKeyframe,

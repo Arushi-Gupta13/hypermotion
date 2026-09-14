@@ -12,7 +12,9 @@ import {
   Activity,
   AlertTriangle,
   Check,
+  Plus,
   RefreshCw,
+  Trash2,
 } from 'lucide-react'
 import {
   AnimatePresence,
@@ -28,17 +30,22 @@ import {
   MIN_CAMERA_SCROLL_SENSITIVITY,
   MIN_LAYER_Z_INDEX,
   MAX_LAYER_BLUR_PX,
+  DEFAULT_BEND_DEFORMATION,
+  MAX_BEND_GEOMETRY_DETAIL,
+  MIN_BEND_GEOMETRY_DETAIL,
   clampLayerBlurAmount,
   effectBlurPropertyId,
   effectStableId,
   normalizeCameraScrollSensitivity,
   normalizeEllipseArc,
   normalizeLayerZIndex,
+  normalizeLayerDeformation,
   useSceneAPI,
   useSceneVersion,
 } from '@/scene'
 import type {
   Appearance,
+  BendDeformation,
   BlendMode,
   CameraNode,
   ComponentPropertyDefinition,
@@ -167,11 +174,13 @@ import { TextMotionPathEditor } from '@/ui/TextMotionPathEditor'
 import { isCursorInstance } from '@/scene/builtins/cursorComponent'
 import {
   addKeyframe,
+  clearBendAnimation,
   findKeyframeAt,
   findTrack,
   getAnimEngine,
   recordKeyframesForPatch,
   removeTrack,
+  resetBendNodes,
   stampToActiveTracksForPatch,
   toggleKeyframe,
 } from '@/anim'
@@ -1011,6 +1020,9 @@ function MultiNodeDetails({ nodes, api }: { nodes: Node[]; api: SceneAPI }) {
   const allCanSetZIndex = nodes.every(
     (n) => n.parent !== null && n.kind !== 'camera' && n.kind !== 'audio',
   )
+  const allCanBend = nodes.every(
+    (n) => n.id !== api.getRoot() && n.kind !== 'camera' && n.kind !== 'audio',
+  )
   const renderModeNodes = renderModeEligibleNodes(nodes)
 
   // Per-group patchers. Each writes to every selected node that has
@@ -1028,7 +1040,7 @@ function MultiNodeDetails({ nodes, api }: { nodes: Node[]; api: SceneAPI }) {
   // recording=on already covers active tracks (it stamps everything),
   // so the two paths never overlap.
   const stampPatchAll = (
-    group: 'transform' | 'appearance' | 'size' | 'layout',
+    group: 'transform' | 'appearance' | 'size' | 'layout' | 'deformation',
     patch: Record<string, unknown>,
   ) => {
     const authorTime = currentAnimationAuthorTime()
@@ -1510,6 +1522,17 @@ function MultiNodeDetails({ nodes, api }: { nodes: Node[]; api: SceneAPI }) {
         </FieldRow>
       </Section>
 
+      {allCanBend ? (
+        <MultiBendSection
+          nodes={nodes}
+          api={api}
+          onStamp={(patch) => stampPatchAll('deformation', patch)}
+          onPreview={previewVisualAll}
+          onPreviewFinish={() => nodeTransformPreviewStore.finish()}
+          onPreviewCancel={cancelVisualPreview}
+        />
+      ) : null}
+
       {cW && cH ? (
         <Section title="Size">
           <FieldRow
@@ -1761,6 +1784,898 @@ function MultiNodeDetails({ nodes, api }: { nodes: Node[]; api: SceneAPI }) {
         </div>
       </button>
     </div>
+  )
+}
+
+function freshBendDeformation(angle = 0): BendDeformation {
+  return {
+    ...DEFAULT_BEND_DEFORMATION,
+    captureDirection: { ...DEFAULT_BEND_DEFORMATION.captureDirection },
+    upDirection: { ...DEFAULT_BEND_DEFORMATION.upDirection },
+    captureOrigin: { ...DEFAULT_BEND_DEFORMATION.captureOrigin },
+    angle,
+  }
+}
+
+type BendPlanePreset = 'depth' | 'canvas' | 'custom'
+
+function bendPlanePreset(bend: BendDeformation): BendPlanePreset {
+  const { x, y, z } = bend.upDirection
+  if (Math.abs(x) < 0.001 && Math.abs(y) < 0.001 && Math.abs(z - 1) < 0.001) {
+    return 'depth'
+  }
+  if (Math.abs(x) < 0.001 && Math.abs(y - 1) < 0.001 && Math.abs(z) < 0.001) {
+    return 'canvas'
+  }
+  return 'custom'
+}
+
+function bendPlaneUpDirection(preset: Exclude<BendPlanePreset, 'custom'>) {
+  return preset === 'depth'
+    ? { x: 0, y: 0, z: 1 }
+    : { x: 0, y: 1, z: 0 }
+}
+
+/**
+ * Bend controls for a multi-layer selection. This intentionally uses the
+ * same MultiKeyframeButton as transform/appearance: when Stagger is armed,
+ * every diamond creates one linked bend property across the captured layer
+ * order, with the set's delay applied to each member.
+ */
+function MultiBendSection({
+  nodes,
+  api,
+  onStamp,
+  onPreview,
+  onPreviewFinish,
+  onPreviewCancel,
+}: {
+  nodes: Node[]
+  api: SceneAPI
+  onStamp: (patch: Record<string, unknown>) => void
+  onPreview: (patch: AnimatedValue) => void
+  onPreviewFinish: () => void
+  onPreviewCancel: () => void
+}) {
+  const storedBend = (node: Node) => {
+    const deformation = normalizeLayerDeformation(node.deformation)
+    return deformation?.kind === 'bend' ? deformation : null
+  }
+  const bendForNode = (node: Node) => storedBend(node) ?? freshBendDeformation()
+  const bendPresence = common(nodes, (node) => storedBend(node) !== null)
+  const hasAnyBend = nodes.some((node) => storedBend(node) !== null)
+  const hasBendOnEveryLayer = nodes.every(
+    (node) => storedBend(node) !== null,
+  )
+  const mixedWithPresence = (value: Common<unknown>) =>
+    bendPresence.mixed || value.mixed
+
+  const cEnabled = common(nodes, (node) => bendForNode(node).enabled)
+  const cAngle = common(nodes, (node) => bendForNode(node).angle)
+  const cFactor = common(nodes, (node) => bendForNode(node).factor)
+  const cShowOriginal = common(
+    nodes,
+    (node) => bendForNode(node).showOriginalGeometry,
+  )
+  const cBothDirections = common(
+    nodes,
+    (node) => bendForNode(node).bothDirections,
+  )
+  const cLimitToRegion = common(
+    nodes,
+    (node) => bendForNode(node).limitToRegion,
+  )
+  const cCaptureDirectionX = common(
+    nodes,
+    (node) => bendForNode(node).captureDirection.x,
+  )
+  const cCaptureDirectionY = common(
+    nodes,
+    (node) => bendForNode(node).captureDirection.y,
+  )
+  const cCaptureDirectionZ = common(
+    nodes,
+    (node) => bendForNode(node).captureDirection.z,
+  )
+  const cCaptureRotation = common(
+    nodes,
+    (node) => bendForNode(node).captureRotation,
+  )
+  const cUpDirectionX = common(
+    nodes,
+    (node) => bendForNode(node).upDirection.x,
+  )
+  const cUpDirectionY = common(
+    nodes,
+    (node) => bendForNode(node).upDirection.y,
+  )
+  const cUpDirectionZ = common(
+    nodes,
+    (node) => bendForNode(node).upDirection.z,
+  )
+  const cUpRotation = common(nodes, (node) => bendForNode(node).upRotation)
+  const cBendRotation = common(
+    nodes,
+    (node) => bendForNode(node).bendRotation,
+  )
+  const cCaptureOriginX = common(
+    nodes,
+    (node) => bendForNode(node).captureOrigin.x,
+  )
+  const cCaptureOriginY = common(
+    nodes,
+    (node) => bendForNode(node).captureOrigin.y,
+  )
+  const cCaptureOriginZ = common(
+    nodes,
+    (node) => bendForNode(node).captureOrigin.z,
+  )
+  const cCaptureLength = common(
+    nodes,
+    (node) => bendForNode(node).captureLength,
+  )
+  const cBendPlane = common(nodes, (node) => bendPlanePreset(bendForNode(node)))
+  const cSurfaceShading = common(
+    nodes,
+    (node) => bendForNode(node).surfaceShading,
+  )
+  const cDepthAware = common(
+    nodes,
+    (node) => bendForNode(node).depthAware,
+  )
+  const cLightAzimuth = common(
+    nodes,
+    (node) => bendForNode(node).lightAzimuth,
+  )
+  const cLightElevation = common(
+    nodes,
+    (node) => bendForNode(node).lightElevation,
+  )
+  const cAmbient = common(nodes, (node) => bendForNode(node).ambient)
+  const cDiffuse = common(nodes, (node) => bendForNode(node).diffuse)
+  const cSpecular = common(nodes, (node) => bendForNode(node).specular)
+  const cRoughness = common(nodes, (node) => bendForNode(node).roughness)
+  const cGeometryDetail = common(
+    nodes,
+    (node) => bendForNode(node).geometryDetail,
+  )
+
+  const targets = (value: (bend: BendDeformation) => number) =>
+    nodes.map((node) => ({
+      nodeId: node.id,
+      currentValue: value(bendForNode(node)),
+    }))
+
+  const addBendAll = () => {
+    const template =
+      nodes.map(storedBend).find((bend) => bend !== null) ??
+      freshBendDeformation(30)
+    api.doc.transact(() => {
+      for (const node of nodes) {
+        if (storedBend(node)) continue
+        api.setNodeProperty(node.id, 'deformation', {
+          ...template,
+          captureDirection: { ...template.captureDirection },
+          upDirection: { ...template.upDirection },
+          captureOrigin: { ...template.captureOrigin },
+        })
+      }
+    }, UNDOABLE_GESTURE_ORIGIN)
+  }
+  const patchBendAll = (
+    patch:
+      | Partial<BendDeformation>
+      | ((current: BendDeformation) => Partial<BendDeformation>),
+    keyframePatch: Record<string, number> = {},
+  ) => {
+    api.doc.transact(() => {
+      for (const node of nodes) {
+        const latest = api.getNode(node.id)
+        if (!latest) continue
+        const current = bendForNode(latest)
+        const resolved = typeof patch === 'function' ? patch(current) : patch
+        const next = normalizeLayerDeformation({ ...current, ...resolved })
+        if (next) api.setNodeProperty(node.id, 'deformation', next)
+      }
+      if (Object.keys(keyframePatch).length > 0) onStamp(keyframePatch)
+    }, UNDOABLE_GESTURE_ORIGIN)
+  }
+  const commitBendScrubAll = (
+    patch:
+      | Partial<BendDeformation>
+      | ((current: BendDeformation) => Partial<BendDeformation>),
+    keyframePatch: Record<string, number>,
+  ) => {
+    patchBendAll(patch, keyframePatch)
+    onPreviewFinish()
+  }
+  const removeBendAll = () => {
+    api.doc.transact(() => {
+      for (const node of nodes) {
+        api.setNodeProperty(node.id, 'deformation', null)
+        clearBendAnimation(api, node.id)
+      }
+    }, UNDOABLE_GESTURE_ORIGIN)
+  }
+  const resetBendAll = () => {
+    resetBendNodes(api, nodes.map((node) => node.id))
+  }
+
+  if (!hasBendOnEveryLayer) {
+    const missingCount = nodes.filter((node) => !storedBend(node)).length
+    return (
+      <Section title="Deform">
+        <button
+          type="button"
+          onClick={addBendAll}
+          className="hm-control-surface flex h-8 w-full items-center justify-center gap-1.5 rounded-[8px] text-[11px] font-medium text-text transition-colors hover:bg-panel-raised"
+        >
+          <Plus aria-hidden="true" className="h-3.5 w-3.5" />
+          {hasAnyBend
+            ? `Add bend to ${missingCount} missing ${missingCount === 1 ? 'layer' : 'layers'}`
+            : `Add bend to ${nodes.length} layers`}
+        </button>
+      </Section>
+    )
+  }
+
+  return (
+    <Section
+      title="Bend"
+      action={
+        <button
+          type="button"
+          onClick={removeBendAll}
+          aria-label="Remove bend from selected layers"
+          title="Remove bend from selected layers"
+          className="flex h-7 w-7 items-center justify-center rounded-[7px] transition-colors hover:bg-panel-raised hover:text-text"
+        >
+          <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
+        </button>
+      }
+    >
+      <SectionToggleRow
+        label="Enabled"
+        value={cEnabled.value}
+        mixed={mixedWithPresence(cEnabled)}
+        plain
+        onCommit={(enabled) => patchBendAll({ enabled })}
+      />
+      <FieldRow label="Bend plane">
+        <MixedCell mixed={mixedWithPresence(cBendPlane)}>
+          <SelectField<BendPlanePreset>
+            value={cBendPlane.value}
+            options={[
+              { value: 'depth', label: '3D depth' },
+              { value: 'canvas', label: 'Canvas' },
+              { value: 'custom', label: 'Custom axes' },
+            ]}
+            onCommit={(preset) => {
+              if (preset === 'custom') return
+              const upDirection = bendPlaneUpDirection(preset)
+              patchBendAll(
+                { upDirection },
+                {
+                  upDirectionX: upDirection.x,
+                  upDirectionY: upDirection.y,
+                  upDirectionZ: upDirection.z,
+                },
+              )
+            }}
+          />
+        </MixedCell>
+      </FieldRow>
+      <KeyframeSliderRow
+        label="Angle"
+        value={cAngle.value}
+        onCommit={(angle) => patchBendAll({ angle }, { angle })}
+        onScrubPreview={(bendAngle) => onPreview({ bendAngle })}
+        onScrubCommit={(angle) =>
+          commitBendScrubAll({ angle }, { angle })
+        }
+        onScrubCancel={onPreviewCancel}
+        min={-360}
+        max={360}
+        step={0.1}
+        suffix="°"
+        mixed={mixedWithPresence(cAngle)}
+        keyframe={
+          <MultiKeyframeButton
+            targets={targets((bend) => bend.angle)}
+            propertyId="deformation.bend.angle"
+          />
+        }
+      />
+      <KeyframeSliderRow
+        label="Factor"
+        value={cFactor.value * 100}
+        onCommit={(percent) =>
+          patchBendAll(
+            { factor: percent / 100 },
+            { factor: percent / 100 },
+          )
+        }
+        onScrubPreview={(percent) =>
+          onPreview({ bendFactor: percent / 100 })
+        }
+        onScrubCommit={(percent) =>
+          commitBendScrubAll(
+            { factor: percent / 100 },
+            { factor: percent / 100 },
+          )
+        }
+        onScrubCancel={onPreviewCancel}
+        min={0}
+        max={100}
+        step={0.1}
+        suffix="%"
+        mixed={mixedWithPresence(cFactor)}
+        keyframe={
+          <MultiKeyframeButton
+            targets={targets((bend) => bend.factor)}
+            propertyId="deformation.bend.factor"
+          />
+        }
+      />
+      <SectionToggleRow
+        label="Show original geometry"
+        value={cShowOriginal.value}
+        mixed={mixedWithPresence(cShowOriginal)}
+        plain
+        onCommit={(showOriginalGeometry) =>
+          patchBendAll({ showOriginalGeometry })
+        }
+      />
+      <SectionToggleRow
+        label="Both directions"
+        value={cBothDirections.value}
+        mixed={mixedWithPresence(cBothDirections)}
+        plain
+        onCommit={(bothDirections) => patchBendAll({ bothDirections })}
+      />
+      <SectionToggleRow
+        label="Limit to capture region"
+        value={cLimitToRegion.value}
+        mixed={mixedWithPresence(cLimitToRegion)}
+        plain
+        onCommit={(limitToRegion) => patchBendAll({ limitToRegion })}
+      />
+
+      <InspectorDisclosure
+        storageKey="multi-bend-surface"
+        title="3D surface"
+        defaultOpen
+      >
+        <SectionToggleRow
+          label="Surface lighting"
+          value={cSurfaceShading.value}
+          mixed={mixedWithPresence(cSurfaceShading)}
+          plain
+          onCommit={(surfaceShading) => patchBendAll({ surfaceShading })}
+        />
+        <SectionToggleRow
+          label="Self-occlusion"
+          value={cDepthAware.value}
+          mixed={mixedWithPresence(cDepthAware)}
+          plain
+          onCommit={(depthAware) => patchBendAll({ depthAware })}
+        />
+        <KeyframeSliderRow
+          label="Light azimuth"
+          value={cLightAzimuth.value}
+          onCommit={(lightAzimuth) => patchBendAll({ lightAzimuth }, { lightAzimuth })}
+          onScrubPreview={(bendLightAzimuth) => onPreview({ bendLightAzimuth })}
+          onScrubCommit={(lightAzimuth) => commitBendScrubAll({ lightAzimuth }, { lightAzimuth })}
+          onScrubCancel={onPreviewCancel}
+          min={-180}
+          max={180}
+          step={0.1}
+          suffix="°"
+          mixed={mixedWithPresence(cLightAzimuth)}
+          keyframe={<MultiKeyframeButton targets={targets((bend) => bend.lightAzimuth)} propertyId="deformation.bend.lightAzimuth" />}
+        />
+        <KeyframeSliderRow
+          label="Light elevation"
+          value={cLightElevation.value}
+          onCommit={(lightElevation) => patchBendAll({ lightElevation }, { lightElevation })}
+          onScrubPreview={(bendLightElevation) => onPreview({ bendLightElevation })}
+          onScrubCommit={(lightElevation) => commitBendScrubAll({ lightElevation }, { lightElevation })}
+          onScrubCancel={onPreviewCancel}
+          min={-90}
+          max={90}
+          step={0.1}
+          suffix="°"
+          mixed={mixedWithPresence(cLightElevation)}
+          keyframe={<MultiKeyframeButton targets={targets((bend) => bend.lightElevation)} propertyId="deformation.bend.lightElevation" />}
+        />
+        <KeyframeSliderRow
+          label="Ambient"
+          value={cAmbient.value * 100}
+          onCommit={(value) => patchBendAll({ ambient: value / 100 }, { ambient: value / 100 })}
+          onScrubPreview={(value) => onPreview({ bendAmbient: value / 100 })}
+          onScrubCommit={(value) => commitBendScrubAll({ ambient: value / 100 }, { ambient: value / 100 })}
+          onScrubCancel={onPreviewCancel}
+          min={0}
+          max={200}
+          step={0.1}
+          suffix="%"
+          mixed={mixedWithPresence(cAmbient)}
+          keyframe={<MultiKeyframeButton targets={targets((bend) => bend.ambient)} propertyId="deformation.bend.ambient" />}
+        />
+        <KeyframeSliderRow
+          label="Directional"
+          value={cDiffuse.value * 100}
+          onCommit={(value) => patchBendAll({ diffuse: value / 100 }, { diffuse: value / 100 })}
+          onScrubPreview={(value) => onPreview({ bendDiffuse: value / 100 })}
+          onScrubCommit={(value) => commitBendScrubAll({ diffuse: value / 100 }, { diffuse: value / 100 })}
+          onScrubCancel={onPreviewCancel}
+          min={0}
+          max={200}
+          step={0.1}
+          suffix="%"
+          mixed={mixedWithPresence(cDiffuse)}
+          keyframe={<MultiKeyframeButton targets={targets((bend) => bend.diffuse)} propertyId="deformation.bend.diffuse" />}
+        />
+        <KeyframeSliderRow
+          label="Highlight"
+          value={cSpecular.value * 100}
+          onCommit={(value) => patchBendAll({ specular: value / 100 }, { specular: value / 100 })}
+          onScrubPreview={(value) => onPreview({ bendSpecular: value / 100 })}
+          onScrubCommit={(value) => commitBendScrubAll({ specular: value / 100 }, { specular: value / 100 })}
+          onScrubCancel={onPreviewCancel}
+          min={0}
+          max={200}
+          step={0.1}
+          suffix="%"
+          mixed={mixedWithPresence(cSpecular)}
+          keyframe={<MultiKeyframeButton targets={targets((bend) => bend.specular)} propertyId="deformation.bend.specular" />}
+        />
+        <KeyframeSliderRow
+          label="Roughness"
+          value={cRoughness.value * 100}
+          onCommit={(value) => patchBendAll({ roughness: value / 100 }, { roughness: value / 100 })}
+          onScrubPreview={(value) => onPreview({ bendRoughness: value / 100 })}
+          onScrubCommit={(value) => commitBendScrubAll({ roughness: value / 100 }, { roughness: value / 100 })}
+          onScrubCancel={onPreviewCancel}
+          min={0}
+          max={100}
+          step={0.1}
+          suffix="%"
+          mixed={mixedWithPresence(cRoughness)}
+          keyframe={<MultiKeyframeButton targets={targets((bend) => bend.roughness)} propertyId="deformation.bend.roughness" />}
+        />
+      </InspectorDisclosure>
+
+      <InspectorDisclosure
+        storageKey="multi-bend-capture-region"
+        title="Capture region"
+        defaultOpen
+      >
+        <div className="mb-1 text-[10px] font-medium text-text-muted">
+          Capture direction
+        </div>
+        <KeyframeSliderRow
+          label="X"
+          value={cCaptureDirectionX.value}
+          onCommit={(x) =>
+            patchBendAll(
+              (bend) => ({
+                captureDirection: { ...bend.captureDirection, x },
+              }),
+              { captureDirectionX: x },
+            )
+          }
+          onScrubPreview={(bendCaptureDirectionX) =>
+            onPreview({ bendCaptureDirectionX })
+          }
+          onScrubCommit={(x) =>
+            commitBendScrubAll(
+              (bend) => ({
+                captureDirection: { ...bend.captureDirection, x },
+              }),
+              { captureDirectionX: x },
+            )
+          }
+          onScrubCancel={onPreviewCancel}
+          min={-1}
+          max={1}
+          step={0.01}
+          mixed={mixedWithPresence(cCaptureDirectionX)}
+          keyframe={
+            <MultiKeyframeButton
+              targets={targets((bend) => bend.captureDirection.x)}
+              propertyId="deformation.bend.captureDirectionX"
+            />
+          }
+        />
+        <KeyframeSliderRow
+          label="Y"
+          value={cCaptureDirectionY.value}
+          onCommit={(y) =>
+            patchBendAll(
+              (bend) => ({
+                captureDirection: { ...bend.captureDirection, y },
+              }),
+              { captureDirectionY: y },
+            )
+          }
+          onScrubPreview={(bendCaptureDirectionY) =>
+            onPreview({ bendCaptureDirectionY })
+          }
+          onScrubCommit={(y) =>
+            commitBendScrubAll(
+              (bend) => ({
+                captureDirection: { ...bend.captureDirection, y },
+              }),
+              { captureDirectionY: y },
+            )
+          }
+          onScrubCancel={onPreviewCancel}
+          min={-1}
+          max={1}
+          step={0.01}
+          mixed={mixedWithPresence(cCaptureDirectionY)}
+          keyframe={
+            <MultiKeyframeButton
+              targets={targets((bend) => bend.captureDirection.y)}
+              propertyId="deformation.bend.captureDirectionY"
+            />
+          }
+        />
+        <KeyframeSliderRow
+          label="Z"
+          value={cCaptureDirectionZ.value}
+          onCommit={(z) =>
+            patchBendAll(
+              (bend) => ({
+                captureDirection: { ...bend.captureDirection, z },
+              }),
+              { captureDirectionZ: z },
+            )
+          }
+          onScrubPreview={(bendCaptureDirectionZ) =>
+            onPreview({ bendCaptureDirectionZ })
+          }
+          onScrubCommit={(z) =>
+            commitBendScrubAll(
+              (bend) => ({
+                captureDirection: { ...bend.captureDirection, z },
+              }),
+              { captureDirectionZ: z },
+            )
+          }
+          onScrubCancel={onPreviewCancel}
+          min={-1}
+          max={1}
+          step={0.01}
+          mixed={mixedWithPresence(cCaptureDirectionZ)}
+          keyframe={
+            <MultiKeyframeButton
+              targets={targets((bend) => bend.captureDirection.z)}
+              propertyId="deformation.bend.captureDirectionZ"
+            />
+          }
+        />
+        <KeyframeSliderRow
+          label="Capture rotation"
+          value={cCaptureRotation.value}
+          onCommit={(captureRotation) =>
+            patchBendAll({ captureRotation }, { captureRotation })
+          }
+          onScrubPreview={(bendCaptureRotation) =>
+            onPreview({ bendCaptureRotation })
+          }
+          onScrubCommit={(captureRotation) =>
+            commitBendScrubAll({ captureRotation }, { captureRotation })
+          }
+          onScrubCancel={onPreviewCancel}
+          min={-180}
+          max={180}
+          step={0.1}
+          suffix="°"
+          mixed={mixedWithPresence(cCaptureRotation)}
+          keyframe={
+            <MultiKeyframeButton
+              targets={targets((bend) => bend.captureRotation)}
+              propertyId="deformation.bend.captureRotation"
+            />
+          }
+        />
+
+        <div aria-hidden="true" className="my-2 border-t border-border" />
+        <div className="mb-1 text-[10px] font-medium text-text-muted">
+          Up direction
+        </div>
+        <KeyframeSliderRow
+          label="X"
+          value={cUpDirectionX.value}
+          onCommit={(x) =>
+            patchBendAll(
+              (bend) => ({ upDirection: { ...bend.upDirection, x } }),
+              { upDirectionX: x },
+            )
+          }
+          onScrubPreview={(bendUpDirectionX) =>
+            onPreview({ bendUpDirectionX })
+          }
+          onScrubCommit={(x) =>
+            commitBendScrubAll(
+              (bend) => ({ upDirection: { ...bend.upDirection, x } }),
+              { upDirectionX: x },
+            )
+          }
+          onScrubCancel={onPreviewCancel}
+          min={-1}
+          max={1}
+          step={0.01}
+          mixed={mixedWithPresence(cUpDirectionX)}
+          keyframe={
+            <MultiKeyframeButton
+              targets={targets((bend) => bend.upDirection.x)}
+              propertyId="deformation.bend.upDirectionX"
+            />
+          }
+        />
+        <KeyframeSliderRow
+          label="Y"
+          value={cUpDirectionY.value}
+          onCommit={(y) =>
+            patchBendAll(
+              (bend) => ({ upDirection: { ...bend.upDirection, y } }),
+              { upDirectionY: y },
+            )
+          }
+          onScrubPreview={(bendUpDirectionY) =>
+            onPreview({ bendUpDirectionY })
+          }
+          onScrubCommit={(y) =>
+            commitBendScrubAll(
+              (bend) => ({ upDirection: { ...bend.upDirection, y } }),
+              { upDirectionY: y },
+            )
+          }
+          onScrubCancel={onPreviewCancel}
+          min={-1}
+          max={1}
+          step={0.01}
+          mixed={mixedWithPresence(cUpDirectionY)}
+          keyframe={
+            <MultiKeyframeButton
+              targets={targets((bend) => bend.upDirection.y)}
+              propertyId="deformation.bend.upDirectionY"
+            />
+          }
+        />
+        <KeyframeSliderRow
+          label="Z"
+          value={cUpDirectionZ.value}
+          onCommit={(z) =>
+            patchBendAll(
+              (bend) => ({ upDirection: { ...bend.upDirection, z } }),
+              { upDirectionZ: z },
+            )
+          }
+          onScrubPreview={(bendUpDirectionZ) =>
+            onPreview({ bendUpDirectionZ })
+          }
+          onScrubCommit={(z) =>
+            commitBendScrubAll(
+              (bend) => ({ upDirection: { ...bend.upDirection, z } }),
+              { upDirectionZ: z },
+            )
+          }
+          onScrubCancel={onPreviewCancel}
+          min={-1}
+          max={1}
+          step={0.01}
+          mixed={mixedWithPresence(cUpDirectionZ)}
+          keyframe={
+            <MultiKeyframeButton
+              targets={targets((bend) => bend.upDirection.z)}
+              propertyId="deformation.bend.upDirectionZ"
+            />
+          }
+        />
+        <KeyframeSliderRow
+          label="Up rotation"
+          value={cUpRotation.value}
+          onCommit={(upRotation) =>
+            patchBendAll({ upRotation }, { upRotation })
+          }
+          onScrubPreview={(bendUpRotation) => onPreview({ bendUpRotation })}
+          onScrubCommit={(upRotation) =>
+            commitBendScrubAll({ upRotation }, { upRotation })
+          }
+          onScrubCancel={onPreviewCancel}
+          min={-180}
+          max={180}
+          step={0.1}
+          suffix="°"
+          mixed={mixedWithPresence(cUpRotation)}
+          keyframe={
+            <MultiKeyframeButton
+              targets={targets((bend) => bend.upRotation)}
+              propertyId="deformation.bend.upRotation"
+            />
+          }
+        />
+        <KeyframeSliderRow
+          label="Bend rotation"
+          value={cBendRotation.value}
+          onCommit={(bendRotation) =>
+            patchBendAll({ bendRotation }, { bendRotation })
+          }
+          onScrubPreview={(bendRotation) => onPreview({ bendRotation })}
+          onScrubCommit={(bendRotation) =>
+            commitBendScrubAll({ bendRotation }, { bendRotation })
+          }
+          onScrubCancel={onPreviewCancel}
+          min={-180}
+          max={180}
+          step={0.1}
+          suffix="°"
+          mixed={mixedWithPresence(cBendRotation)}
+          keyframe={
+            <MultiKeyframeButton
+              targets={targets((bend) => bend.bendRotation)}
+              propertyId="deformation.bend.bendRotation"
+            />
+          }
+        />
+
+        <div aria-hidden="true" className="my-2 border-t border-border" />
+        <div className="mb-1 text-[10px] font-medium text-text-muted">
+          Capture origin
+        </div>
+        <KeyframeSliderRow
+          label="X"
+          value={cCaptureOriginX.value}
+          onCommit={(x) =>
+            patchBendAll(
+              (bend) => ({ captureOrigin: { ...bend.captureOrigin, x } }),
+              { captureOriginX: x },
+            )
+          }
+          onScrubPreview={(bendCaptureOriginX) =>
+            onPreview({ bendCaptureOriginX })
+          }
+          onScrubCommit={(x) =>
+            commitBendScrubAll(
+              (bend) => ({ captureOrigin: { ...bend.captureOrigin, x } }),
+              { captureOriginX: x },
+            )
+          }
+          onScrubCancel={onPreviewCancel}
+          sliderMin={-1000}
+          sliderMax={1000}
+          step={1}
+          suffix="px"
+          mixed={mixedWithPresence(cCaptureOriginX)}
+          keyframe={
+            <MultiKeyframeButton
+              targets={targets((bend) => bend.captureOrigin.x)}
+              propertyId="deformation.bend.captureOriginX"
+            />
+          }
+        />
+        <KeyframeSliderRow
+          label="Y"
+          value={cCaptureOriginY.value}
+          onCommit={(y) =>
+            patchBendAll(
+              (bend) => ({ captureOrigin: { ...bend.captureOrigin, y } }),
+              { captureOriginY: y },
+            )
+          }
+          onScrubPreview={(bendCaptureOriginY) =>
+            onPreview({ bendCaptureOriginY })
+          }
+          onScrubCommit={(y) =>
+            commitBendScrubAll(
+              (bend) => ({ captureOrigin: { ...bend.captureOrigin, y } }),
+              { captureOriginY: y },
+            )
+          }
+          onScrubCancel={onPreviewCancel}
+          sliderMin={-1000}
+          sliderMax={1000}
+          step={1}
+          suffix="px"
+          mixed={mixedWithPresence(cCaptureOriginY)}
+          keyframe={
+            <MultiKeyframeButton
+              targets={targets((bend) => bend.captureOrigin.y)}
+              propertyId="deformation.bend.captureOriginY"
+            />
+          }
+        />
+        <KeyframeSliderRow
+          label="Z"
+          value={cCaptureOriginZ.value}
+          onCommit={(z) =>
+            patchBendAll(
+              (bend) => ({ captureOrigin: { ...bend.captureOrigin, z } }),
+              { captureOriginZ: z },
+            )
+          }
+          onScrubPreview={(bendCaptureOriginZ) =>
+            onPreview({ bendCaptureOriginZ })
+          }
+          onScrubCommit={(z) =>
+            commitBendScrubAll(
+              (bend) => ({ captureOrigin: { ...bend.captureOrigin, z } }),
+              { captureOriginZ: z },
+            )
+          }
+          onScrubCancel={onPreviewCancel}
+          sliderMin={-1000}
+          sliderMax={1000}
+          step={1}
+          suffix="px"
+          mixed={mixedWithPresence(cCaptureOriginZ)}
+          keyframe={
+            <MultiKeyframeButton
+              targets={targets((bend) => bend.captureOrigin.z)}
+              propertyId="deformation.bend.captureOriginZ"
+            />
+          }
+        />
+        <KeyframeSliderRow
+          label="Capture length"
+          value={cCaptureLength.value}
+          onCommit={(captureLength) =>
+            patchBendAll({ captureLength }, { captureLength })
+          }
+          onScrubPreview={(bendCaptureLength) =>
+            onPreview({ bendCaptureLength })
+          }
+          onScrubCommit={(captureLength) =>
+            commitBendScrubAll({ captureLength }, { captureLength })
+          }
+          onScrubCancel={onPreviewCancel}
+          min={0}
+          max={4000}
+          step={1}
+          suffix="px"
+          mixed={mixedWithPresence(cCaptureLength)}
+          keyframe={
+            <MultiKeyframeButton
+              targets={targets((bend) => bend.captureLength)}
+              propertyId="deformation.bend.captureLength"
+            />
+          }
+        />
+        <p className="text-[9px] leading-4 text-text-muted">
+          Capture length 0 automatically fits each layer.
+        </p>
+      </InspectorDisclosure>
+
+      <InspectorDisclosure storageKey="multi-bend-manage" title="Manage">
+        <FieldRow label="Geometry detail">
+          <MixedCell mixed={mixedWithPresence(cGeometryDetail)}>
+            <SliderField
+              value={cGeometryDetail.value}
+              onCommit={(geometryDetail) => patchBendAll({ geometryDetail })}
+              min={MIN_BEND_GEOMETRY_DETAIL}
+              max={MAX_BEND_GEOMETRY_DETAIL}
+              step={1}
+            />
+          </MixedCell>
+        </FieldRow>
+        <button
+          type="button"
+          onClick={resetBendAll}
+          title="Restore Bend defaults and remove Bend keyframes"
+          className="hm-control-surface mt-1 flex h-8 w-full items-center justify-center gap-1.5 rounded-[8px] text-[11px] font-medium text-text transition-colors hover:bg-panel-raised"
+        >
+          <RefreshCw aria-hidden="true" className="h-3.5 w-3.5" />
+          Reset selected bends
+        </button>
+        <p className="text-[9px] leading-4 text-text-muted">
+          Restores neutral 3D defaults and removes Bend keyframes.
+        </p>
+      </InspectorDisclosure>
+    </Section>
   )
 }
 
@@ -2253,6 +3168,49 @@ function NodeDetails({ node, api }: { node: Node; api: SceneAPI }) {
     supportsMotionPath ? normalizeLayerMotionPath(node.motionPath) : null
   const liveMotionPathProgress =
     anim?.motionPathProgress ?? motionPath?.progress ?? 0
+  const supportsBend =
+    node.id !== api.getRoot() &&
+    node.kind !== 'camera' &&
+    node.kind !== 'audio'
+  const bend = supportsBend
+    ? normalizeLayerDeformation(node.deformation)
+    : null
+  const liveBend = bend?.kind === 'bend'
+    ? {
+        ...bend,
+        angle: anim?.bendAngle ?? bend.angle,
+        factor: anim?.bendFactor ?? bend.factor,
+        captureDirection: {
+          x: anim?.bendCaptureDirectionX ?? bend.captureDirection.x,
+          y: anim?.bendCaptureDirectionY ?? bend.captureDirection.y,
+          z: anim?.bendCaptureDirectionZ ?? bend.captureDirection.z,
+        },
+        captureRotation:
+          anim?.bendCaptureRotation ?? bend.captureRotation,
+        upDirection: {
+          x: anim?.bendUpDirectionX ?? bend.upDirection.x,
+          y: anim?.bendUpDirectionY ?? bend.upDirection.y,
+          z: anim?.bendUpDirectionZ ?? bend.upDirection.z,
+        },
+        upRotation: anim?.bendUpRotation ?? bend.upRotation,
+        bendRotation: anim?.bendRotation ?? bend.bendRotation,
+        captureOrigin: {
+          x: anim?.bendCaptureOriginX ?? bend.captureOrigin.x,
+          y: anim?.bendCaptureOriginY ?? bend.captureOrigin.y,
+          z: anim?.bendCaptureOriginZ ?? bend.captureOrigin.z,
+        },
+        captureLength:
+          anim?.bendCaptureLength ?? bend.captureLength,
+        lightAzimuth:
+          anim?.bendLightAzimuth ?? bend.lightAzimuth,
+        lightElevation:
+          anim?.bendLightElevation ?? bend.lightElevation,
+        ambient: anim?.bendAmbient ?? bend.ambient,
+        diffuse: anim?.bendDiffuse ?? bend.diffuse,
+        specular: anim?.bendSpecular ?? bend.specular,
+        roughness: anim?.bendRoughness ?? bend.roughness,
+      }
+    : null
   const liveFocusDistance =
     node.kind === 'camera'
       ? anim?.focusDistance ?? node.focusDistance ?? 0
@@ -2371,6 +3329,7 @@ function NodeDetails({ node, api }: { node: Node; api: SceneAPI }) {
       | 'size'
       | 'camera'
       | 'motionPath'
+      | 'deformation'
       | 'layout',
     patch: Record<string, unknown>,
   ) => {
@@ -2637,6 +3596,55 @@ function NodeDetails({ node, api }: { node: Node; api: SceneAPI }) {
       )
       if (progressTrack) removeTrack(api, progressTrack.id)
     }, UNDOABLE_GESTURE_ORIGIN)
+  }
+  const addBend = () => {
+    if (!supportsBend) return
+    api.doc.transact(() => {
+      api.setNodeProperty(node.id, 'deformation', {
+        ...DEFAULT_BEND_DEFORMATION,
+        captureDirection: { ...DEFAULT_BEND_DEFORMATION.captureDirection },
+        upDirection: { ...DEFAULT_BEND_DEFORMATION.upDirection },
+        captureOrigin: { ...DEFAULT_BEND_DEFORMATION.captureOrigin },
+        angle: 30,
+      })
+    }, UNDOABLE_GESTURE_ORIGIN)
+  }
+  const patchBend = (
+    patch: Partial<BendDeformation>,
+    keyframePatch: Record<string, number> = {},
+  ) => {
+    if (!supportsBend) return
+    const currentNode = api.getNode(node.id)
+    const current = currentNode
+      ? normalizeLayerDeformation(currentNode.deformation)
+      : null
+    if (!current || current.kind !== 'bend') return
+    const next = normalizeLayerDeformation({ ...current, ...patch })
+    if (!next) return
+    api.doc.transact(() => {
+      api.setNodeProperty(node.id, 'deformation', next)
+      if (Object.keys(keyframePatch).length > 0) {
+        stampForPatch('deformation', keyframePatch)
+      }
+    }, UNDOABLE_GESTURE_ORIGIN)
+  }
+  const commitBendScrub = (
+    patch: Partial<BendDeformation>,
+    keyframePatch: Record<string, number>,
+  ) => {
+    patchBend(patch, keyframePatch)
+    nodeTransformPreviewStore.finish()
+  }
+  const removeBend = () => {
+    if (!supportsBend) return
+    api.doc.transact(() => {
+      api.setNodeProperty(node.id, 'deformation', null)
+      clearBendAnimation(api, node.id)
+    }, UNDOABLE_GESTURE_ORIGIN)
+  }
+  const resetBend = () => {
+    if (!supportsBend) return
+    resetBendNodes(api, [node.id])
   }
   const patchCamera = (
     patch: Partial<
@@ -3420,6 +4428,463 @@ function NodeDetails({ node, api }: { node: Node; api: SceneAPI }) {
           />
         </InspectorDisclosure>
       </Section>
+      )}
+
+      {supportsBend && !liveBend && (
+        <Section title="Deform">
+          <button
+            type="button"
+            onClick={addBend}
+            className="hm-control-surface flex h-8 w-full items-center justify-center gap-1.5 rounded-[8px] text-[11px] font-medium text-text transition-colors hover:bg-panel-raised"
+          >
+            <Plus aria-hidden="true" className="h-3.5 w-3.5" />
+            Add bend
+          </button>
+        </Section>
+      )}
+
+      {supportsBend && liveBend && (
+        <Section
+          title="Bend"
+          action={
+            <button
+              type="button"
+              onClick={removeBend}
+              aria-label="Remove bend"
+              title="Remove bend"
+              className="flex h-7 w-7 items-center justify-center rounded-[7px] transition-colors hover:bg-panel-raised hover:text-text"
+            >
+              <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
+            </button>
+          }
+        >
+          <FieldRow label="Type">
+            <SelectField<'bend'>
+              value="bend"
+              options={[{ value: 'bend', label: 'Bend' }]}
+              onCommit={() => undefined}
+              width="w-full"
+            />
+          </FieldRow>
+          <SectionToggleRow
+            label="Enabled"
+            value={liveBend.enabled}
+            plain
+            onCommit={(enabled) => patchBend({ enabled })}
+          />
+          <FieldRow label="Bend plane">
+            <SelectField<BendPlanePreset>
+              value={bendPlanePreset(liveBend)}
+              options={[
+                { value: 'depth', label: '3D depth' },
+                { value: 'canvas', label: 'Canvas' },
+                { value: 'custom', label: 'Custom axes' },
+              ]}
+              onCommit={(preset) => {
+                if (preset === 'custom') return
+                const upDirection = bendPlaneUpDirection(preset)
+                patchBend(
+                  { upDirection },
+                  {
+                    upDirectionX: upDirection.x,
+                    upDirectionY: upDirection.y,
+                    upDirectionZ: upDirection.z,
+                  },
+                )
+              }}
+            />
+          </FieldRow>
+          <KeyframeSliderRow
+            label="Angle"
+            value={liveBend.angle}
+            onCommit={(angle) => patchBend({ angle }, { angle })}
+            onScrubPreview={(bendAngle) => previewNodeVisual({ bendAngle })}
+            onScrubCommit={(angle) =>
+              commitBendScrub({ angle }, { angle })
+            }
+            onScrubCancel={cancelNodeVisualPreview}
+            min={-360}
+            max={360}
+            step={0.1}
+            suffix="°"
+            keyframe={
+              <KeyframeButton
+                nodeId={node.id}
+                propertyId="deformation.bend.angle"
+                currentValue={liveBend.angle}
+              />
+            }
+          />
+          <KeyframeSliderRow
+            label="Factor"
+            value={liveBend.factor * 100}
+            onCommit={(percent) =>
+              patchBend({ factor: percent / 100 }, { factor: percent / 100 })
+            }
+            onScrubPreview={(percent) =>
+              previewNodeVisual({ bendFactor: percent / 100 })
+            }
+            onScrubCommit={(percent) =>
+              commitBendScrub(
+                { factor: percent / 100 },
+                { factor: percent / 100 },
+              )
+            }
+            onScrubCancel={cancelNodeVisualPreview}
+            min={0}
+            max={100}
+            step={0.1}
+            suffix="%"
+            keyframe={
+              <KeyframeButton
+                nodeId={node.id}
+                propertyId="deformation.bend.factor"
+                currentValue={liveBend.factor}
+              />
+            }
+          />
+          <SectionToggleRow
+            label="Show original geometry"
+            value={liveBend.showOriginalGeometry}
+            plain
+            onCommit={(showOriginalGeometry) =>
+              patchBend({ showOriginalGeometry })
+            }
+          />
+          <SectionToggleRow
+            label="Both directions"
+            value={liveBend.bothDirections}
+            plain
+            onCommit={(bothDirections) => patchBend({ bothDirections })}
+          />
+          <SectionToggleRow
+            label="Limit to capture region"
+            value={liveBend.limitToRegion}
+            plain
+            onCommit={(limitToRegion) => patchBend({ limitToRegion })}
+          />
+
+          <InspectorDisclosure
+            storageKey="bend-surface"
+            title="3D surface"
+            defaultOpen
+          >
+            <SectionToggleRow
+              label="Surface lighting"
+              value={liveBend.surfaceShading}
+              plain
+              onCommit={(surfaceShading) => patchBend({ surfaceShading })}
+            />
+            <SectionToggleRow
+              label="Self-occlusion"
+              value={liveBend.depthAware}
+              plain
+              onCommit={(depthAware) => patchBend({ depthAware })}
+            />
+            <KeyframeSliderRow
+              label="Light azimuth"
+              value={liveBend.lightAzimuth}
+              onCommit={(lightAzimuth) => patchBend({ lightAzimuth }, { lightAzimuth })}
+              onScrubPreview={(bendLightAzimuth) => previewNodeVisual({ bendLightAzimuth })}
+              onScrubCommit={(lightAzimuth) => commitBendScrub({ lightAzimuth }, { lightAzimuth })}
+              onScrubCancel={cancelNodeVisualPreview}
+              min={-180}
+              max={180}
+              step={0.1}
+              suffix="°"
+              keyframe={<KeyframeButton nodeId={node.id} propertyId="deformation.bend.lightAzimuth" currentValue={liveBend.lightAzimuth} />}
+            />
+            <KeyframeSliderRow
+              label="Light elevation"
+              value={liveBend.lightElevation}
+              onCommit={(lightElevation) => patchBend({ lightElevation }, { lightElevation })}
+              onScrubPreview={(bendLightElevation) => previewNodeVisual({ bendLightElevation })}
+              onScrubCommit={(lightElevation) => commitBendScrub({ lightElevation }, { lightElevation })}
+              onScrubCancel={cancelNodeVisualPreview}
+              min={-90}
+              max={90}
+              step={0.1}
+              suffix="°"
+              keyframe={<KeyframeButton nodeId={node.id} propertyId="deformation.bend.lightElevation" currentValue={liveBend.lightElevation} />}
+            />
+            <KeyframeSliderRow
+              label="Ambient"
+              value={liveBend.ambient * 100}
+              onCommit={(value) => patchBend({ ambient: value / 100 }, { ambient: value / 100 })}
+              onScrubPreview={(value) => previewNodeVisual({ bendAmbient: value / 100 })}
+              onScrubCommit={(value) => commitBendScrub({ ambient: value / 100 }, { ambient: value / 100 })}
+              onScrubCancel={cancelNodeVisualPreview}
+              min={0}
+              max={200}
+              step={0.1}
+              suffix="%"
+              keyframe={<KeyframeButton nodeId={node.id} propertyId="deformation.bend.ambient" currentValue={liveBend.ambient} />}
+            />
+            <KeyframeSliderRow
+              label="Directional"
+              value={liveBend.diffuse * 100}
+              onCommit={(value) => patchBend({ diffuse: value / 100 }, { diffuse: value / 100 })}
+              onScrubPreview={(value) => previewNodeVisual({ bendDiffuse: value / 100 })}
+              onScrubCommit={(value) => commitBendScrub({ diffuse: value / 100 }, { diffuse: value / 100 })}
+              onScrubCancel={cancelNodeVisualPreview}
+              min={0}
+              max={200}
+              step={0.1}
+              suffix="%"
+              keyframe={<KeyframeButton nodeId={node.id} propertyId="deformation.bend.diffuse" currentValue={liveBend.diffuse} />}
+            />
+            <KeyframeSliderRow
+              label="Highlight"
+              value={liveBend.specular * 100}
+              onCommit={(value) => patchBend({ specular: value / 100 }, { specular: value / 100 })}
+              onScrubPreview={(value) => previewNodeVisual({ bendSpecular: value / 100 })}
+              onScrubCommit={(value) => commitBendScrub({ specular: value / 100 }, { specular: value / 100 })}
+              onScrubCancel={cancelNodeVisualPreview}
+              min={0}
+              max={200}
+              step={0.1}
+              suffix="%"
+              keyframe={<KeyframeButton nodeId={node.id} propertyId="deformation.bend.specular" currentValue={liveBend.specular} />}
+            />
+            <KeyframeSliderRow
+              label="Roughness"
+              value={liveBend.roughness * 100}
+              onCommit={(value) => patchBend({ roughness: value / 100 }, { roughness: value / 100 })}
+              onScrubPreview={(value) => previewNodeVisual({ bendRoughness: value / 100 })}
+              onScrubCommit={(value) => commitBendScrub({ roughness: value / 100 }, { roughness: value / 100 })}
+              onScrubCancel={cancelNodeVisualPreview}
+              min={0}
+              max={100}
+              step={0.1}
+              suffix="%"
+              keyframe={<KeyframeButton nodeId={node.id} propertyId="deformation.bend.roughness" currentValue={liveBend.roughness} />}
+            />
+          </InspectorDisclosure>
+
+          <InspectorDisclosure
+            storageKey="bend-capture-region"
+            title="Capture region"
+            defaultOpen
+          >
+            <div className="mb-1 text-[10px] font-medium text-text-muted">
+              Capture direction
+            </div>
+            <KeyframeSliderRow
+              label="X"
+              value={liveBend.captureDirection.x}
+              onCommit={(x) =>
+                patchBend(
+                  { captureDirection: { ...liveBend.captureDirection, x } },
+                  { captureDirectionX: x },
+                )
+              }
+              onScrubPreview={(bendCaptureDirectionX) =>
+                previewNodeVisual({ bendCaptureDirectionX })
+              }
+              onScrubCommit={(x) =>
+                commitBendScrub(
+                  { captureDirection: { ...liveBend.captureDirection, x } },
+                  { captureDirectionX: x },
+                )
+              }
+              onScrubCancel={cancelNodeVisualPreview}
+              min={-1}
+              max={1}
+              step={0.01}
+              keyframe={
+                <KeyframeButton nodeId={node.id} propertyId="deformation.bend.captureDirectionX" currentValue={liveBend.captureDirection.x} />
+              }
+            />
+            <KeyframeSliderRow
+              label="Y"
+              value={liveBend.captureDirection.y}
+              onCommit={(y) => patchBend({ captureDirection: { ...liveBend.captureDirection, y } }, { captureDirectionY: y })}
+              onScrubPreview={(bendCaptureDirectionY) => previewNodeVisual({ bendCaptureDirectionY })}
+              onScrubCommit={(y) => commitBendScrub({ captureDirection: { ...liveBend.captureDirection, y } }, { captureDirectionY: y })}
+              onScrubCancel={cancelNodeVisualPreview}
+              min={-1}
+              max={1}
+              step={0.01}
+              keyframe={<KeyframeButton nodeId={node.id} propertyId="deformation.bend.captureDirectionY" currentValue={liveBend.captureDirection.y} />}
+            />
+            <KeyframeSliderRow
+              label="Z"
+              value={liveBend.captureDirection.z}
+              onCommit={(z) => patchBend({ captureDirection: { ...liveBend.captureDirection, z } }, { captureDirectionZ: z })}
+              onScrubPreview={(bendCaptureDirectionZ) => previewNodeVisual({ bendCaptureDirectionZ })}
+              onScrubCommit={(z) => commitBendScrub({ captureDirection: { ...liveBend.captureDirection, z } }, { captureDirectionZ: z })}
+              onScrubCancel={cancelNodeVisualPreview}
+              min={-1}
+              max={1}
+              step={0.01}
+              keyframe={<KeyframeButton nodeId={node.id} propertyId="deformation.bend.captureDirectionZ" currentValue={liveBend.captureDirection.z} />}
+            />
+            <KeyframeSliderRow
+              label="Capture rotation"
+              value={liveBend.captureRotation}
+              onCommit={(captureRotation) => patchBend({ captureRotation }, { captureRotation })}
+              onScrubPreview={(bendCaptureRotation) => previewNodeVisual({ bendCaptureRotation })}
+              onScrubCommit={(captureRotation) => commitBendScrub({ captureRotation }, { captureRotation })}
+              onScrubCancel={cancelNodeVisualPreview}
+              min={-180}
+              max={180}
+              step={0.1}
+              suffix="°"
+              keyframe={<KeyframeButton nodeId={node.id} propertyId="deformation.bend.captureRotation" currentValue={liveBend.captureRotation} />}
+            />
+
+            <div aria-hidden="true" className="my-2 border-t border-border" />
+            <div className="mb-1 text-[10px] font-medium text-text-muted">
+              Up direction
+            </div>
+            <KeyframeSliderRow
+              label="X"
+              value={liveBend.upDirection.x}
+              onCommit={(x) => patchBend({ upDirection: { ...liveBend.upDirection, x } }, { upDirectionX: x })}
+              onScrubPreview={(bendUpDirectionX) => previewNodeVisual({ bendUpDirectionX })}
+              onScrubCommit={(x) => commitBendScrub({ upDirection: { ...liveBend.upDirection, x } }, { upDirectionX: x })}
+              onScrubCancel={cancelNodeVisualPreview}
+              min={-1}
+              max={1}
+              step={0.01}
+              keyframe={<KeyframeButton nodeId={node.id} propertyId="deformation.bend.upDirectionX" currentValue={liveBend.upDirection.x} />}
+            />
+            <KeyframeSliderRow
+              label="Y"
+              value={liveBend.upDirection.y}
+              onCommit={(y) => patchBend({ upDirection: { ...liveBend.upDirection, y } }, { upDirectionY: y })}
+              onScrubPreview={(bendUpDirectionY) => previewNodeVisual({ bendUpDirectionY })}
+              onScrubCommit={(y) => commitBendScrub({ upDirection: { ...liveBend.upDirection, y } }, { upDirectionY: y })}
+              onScrubCancel={cancelNodeVisualPreview}
+              min={-1}
+              max={1}
+              step={0.01}
+              keyframe={<KeyframeButton nodeId={node.id} propertyId="deformation.bend.upDirectionY" currentValue={liveBend.upDirection.y} />}
+            />
+            <KeyframeSliderRow
+              label="Z"
+              value={liveBend.upDirection.z}
+              onCommit={(z) => patchBend({ upDirection: { ...liveBend.upDirection, z } }, { upDirectionZ: z })}
+              onScrubPreview={(bendUpDirectionZ) => previewNodeVisual({ bendUpDirectionZ })}
+              onScrubCommit={(z) => commitBendScrub({ upDirection: { ...liveBend.upDirection, z } }, { upDirectionZ: z })}
+              onScrubCancel={cancelNodeVisualPreview}
+              min={-1}
+              max={1}
+              step={0.01}
+              keyframe={<KeyframeButton nodeId={node.id} propertyId="deformation.bend.upDirectionZ" currentValue={liveBend.upDirection.z} />}
+            />
+            <KeyframeSliderRow
+              label="Up rotation"
+              value={liveBend.upRotation}
+              onCommit={(upRotation) => patchBend({ upRotation }, { upRotation })}
+              onScrubPreview={(bendUpRotation) => previewNodeVisual({ bendUpRotation })}
+              onScrubCommit={(upRotation) => commitBendScrub({ upRotation }, { upRotation })}
+              onScrubCancel={cancelNodeVisualPreview}
+              min={-180}
+              max={180}
+              step={0.1}
+              suffix="°"
+              keyframe={<KeyframeButton nodeId={node.id} propertyId="deformation.bend.upRotation" currentValue={liveBend.upRotation} />}
+            />
+            <KeyframeSliderRow
+              label="Bend rotation"
+              value={liveBend.bendRotation}
+              onCommit={(bendRotation) => patchBend({ bendRotation }, { bendRotation })}
+              onScrubPreview={(bendRotation) => previewNodeVisual({ bendRotation })}
+              onScrubCommit={(bendRotation) => commitBendScrub({ bendRotation }, { bendRotation })}
+              onScrubCancel={cancelNodeVisualPreview}
+              min={-180}
+              max={180}
+              step={0.1}
+              suffix="°"
+              keyframe={<KeyframeButton nodeId={node.id} propertyId="deformation.bend.bendRotation" currentValue={liveBend.bendRotation} />}
+            />
+
+            <div aria-hidden="true" className="my-2 border-t border-border" />
+            <div className="mb-1 text-[10px] font-medium text-text-muted">
+              Capture origin
+            </div>
+            <KeyframeSliderRow
+              label="X"
+              value={liveBend.captureOrigin.x}
+              onCommit={(x) => patchBend({ captureOrigin: { ...liveBend.captureOrigin, x } }, { captureOriginX: x })}
+              onScrubPreview={(bendCaptureOriginX) => previewNodeVisual({ bendCaptureOriginX })}
+              onScrubCommit={(x) => commitBendScrub({ captureOrigin: { ...liveBend.captureOrigin, x } }, { captureOriginX: x })}
+              onScrubCancel={cancelNodeVisualPreview}
+              sliderMin={-1000}
+              sliderMax={1000}
+              step={1}
+              suffix="px"
+              keyframe={<KeyframeButton nodeId={node.id} propertyId="deformation.bend.captureOriginX" currentValue={liveBend.captureOrigin.x} />}
+            />
+            <KeyframeSliderRow
+              label="Y"
+              value={liveBend.captureOrigin.y}
+              onCommit={(y) => patchBend({ captureOrigin: { ...liveBend.captureOrigin, y } }, { captureOriginY: y })}
+              onScrubPreview={(bendCaptureOriginY) => previewNodeVisual({ bendCaptureOriginY })}
+              onScrubCommit={(y) => commitBendScrub({ captureOrigin: { ...liveBend.captureOrigin, y } }, { captureOriginY: y })}
+              onScrubCancel={cancelNodeVisualPreview}
+              sliderMin={-1000}
+              sliderMax={1000}
+              step={1}
+              suffix="px"
+              keyframe={<KeyframeButton nodeId={node.id} propertyId="deformation.bend.captureOriginY" currentValue={liveBend.captureOrigin.y} />}
+            />
+            <KeyframeSliderRow
+              label="Z"
+              value={liveBend.captureOrigin.z}
+              onCommit={(z) => patchBend({ captureOrigin: { ...liveBend.captureOrigin, z } }, { captureOriginZ: z })}
+              onScrubPreview={(bendCaptureOriginZ) => previewNodeVisual({ bendCaptureOriginZ })}
+              onScrubCommit={(z) => commitBendScrub({ captureOrigin: { ...liveBend.captureOrigin, z } }, { captureOriginZ: z })}
+              onScrubCancel={cancelNodeVisualPreview}
+              sliderMin={-1000}
+              sliderMax={1000}
+              step={1}
+              suffix="px"
+              keyframe={<KeyframeButton nodeId={node.id} propertyId="deformation.bend.captureOriginZ" currentValue={liveBend.captureOrigin.z} />}
+            />
+            <KeyframeSliderRow
+              label="Capture length"
+              value={liveBend.captureLength}
+              onCommit={(captureLength) => patchBend({ captureLength }, { captureLength })}
+              onScrubPreview={(bendCaptureLength) => previewNodeVisual({ bendCaptureLength })}
+              onScrubCommit={(captureLength) => commitBendScrub({ captureLength }, { captureLength })}
+              onScrubCancel={cancelNodeVisualPreview}
+              min={0}
+              max={4000}
+              step={1}
+              suffix="px"
+              keyframe={<KeyframeButton nodeId={node.id} propertyId="deformation.bend.captureLength" currentValue={liveBend.captureLength} />}
+            />
+            <p className="text-[9px] leading-4 text-text-muted">
+              Capture length 0 automatically fits the layer.
+            </p>
+          </InspectorDisclosure>
+
+          <InspectorDisclosure storageKey="bend-manage" title="Manage">
+            <FieldRow label="Geometry detail">
+              <SliderField
+                value={liveBend.geometryDetail}
+                onCommit={(geometryDetail) => patchBend({ geometryDetail })}
+                min={MIN_BEND_GEOMETRY_DETAIL}
+                max={MAX_BEND_GEOMETRY_DETAIL}
+                step={1}
+              />
+            </FieldRow>
+            <button
+              type="button"
+              onClick={resetBend}
+              title="Restore Bend defaults and remove Bend keyframes"
+              className="hm-control-surface mt-1 flex h-8 w-full items-center justify-center gap-1.5 rounded-[8px] text-[11px] font-medium text-text transition-colors hover:bg-panel-raised"
+            >
+              <RefreshCw aria-hidden="true" className="h-3.5 w-3.5" />
+              Reset bend
+            </button>
+            <p className="text-[9px] leading-4 text-text-muted">
+              Restores neutral 3D defaults and removes Bend keyframes.
+            </p>
+          </InspectorDisclosure>
+        </Section>
       )}
 
       {'size' in node && node.kind !== 'audio' && (

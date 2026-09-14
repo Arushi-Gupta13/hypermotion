@@ -20,7 +20,7 @@ import type {
  *   3. Anim engine will pick it up automatically
  */
 
-export type PropertyGroup = 'transform' | 'camera' | 'appearance' | 'shape' | 'text' | 'layout' | 'size' | 'semantic'
+export type PropertyGroup = 'transform' | 'deformation' | 'camera' | 'appearance' | 'shape' | 'text' | 'layout' | 'size' | 'semantic'
 export type Interpolation = 'numeric' | 'discrete' | 'color' | 'angle'
 
 export interface PropertyDescriptor {
@@ -89,6 +89,92 @@ export const PROPERTIES: Record<StaticPropertyId, PropertyDescriptor> = {
   'motionPath.progress': {
     id: 'motionPath.progress', group: 'transform', label: 'Path Progress',
     layoutAffecting: false, interpolation: 'numeric', defaultValue: 0,
+  },
+
+  // bend deformation — vertex-only GPU work, no Yoga relayout
+  'deformation.bend.angle': {
+    id: 'deformation.bend.angle', group: 'deformation', label: 'Bend Angle',
+    layoutAffecting: false, interpolation: 'angle', defaultValue: 0,
+  },
+  'deformation.bend.factor': {
+    id: 'deformation.bend.factor', group: 'deformation', label: 'Bend Factor',
+    layoutAffecting: false, interpolation: 'numeric', defaultValue: 1,
+  },
+  'deformation.bend.captureDirectionX': {
+    id: 'deformation.bend.captureDirectionX', group: 'deformation', label: 'Capture Direction X',
+    layoutAffecting: false, interpolation: 'numeric', defaultValue: 1,
+  },
+  'deformation.bend.captureDirectionY': {
+    id: 'deformation.bend.captureDirectionY', group: 'deformation', label: 'Capture Direction Y',
+    layoutAffecting: false, interpolation: 'numeric', defaultValue: 0,
+  },
+  'deformation.bend.captureDirectionZ': {
+    id: 'deformation.bend.captureDirectionZ', group: 'deformation', label: 'Capture Direction Z',
+    layoutAffecting: false, interpolation: 'numeric', defaultValue: 0,
+  },
+  'deformation.bend.captureRotation': {
+    id: 'deformation.bend.captureRotation', group: 'deformation', label: 'Capture Rotation',
+    layoutAffecting: false, interpolation: 'angle', defaultValue: 0,
+  },
+  'deformation.bend.upDirectionX': {
+    id: 'deformation.bend.upDirectionX', group: 'deformation', label: 'Up Direction X',
+    layoutAffecting: false, interpolation: 'numeric', defaultValue: 0,
+  },
+  'deformation.bend.upDirectionY': {
+    id: 'deformation.bend.upDirectionY', group: 'deformation', label: 'Up Direction Y',
+    layoutAffecting: false, interpolation: 'numeric', defaultValue: 1,
+  },
+  'deformation.bend.upDirectionZ': {
+    id: 'deformation.bend.upDirectionZ', group: 'deformation', label: 'Up Direction Z',
+    layoutAffecting: false, interpolation: 'numeric', defaultValue: 0,
+  },
+  'deformation.bend.upRotation': {
+    id: 'deformation.bend.upRotation', group: 'deformation', label: 'Up Rotation',
+    layoutAffecting: false, interpolation: 'angle', defaultValue: 0,
+  },
+  'deformation.bend.bendRotation': {
+    id: 'deformation.bend.bendRotation', group: 'deformation', label: 'Bend Rotation',
+    layoutAffecting: false, interpolation: 'angle', defaultValue: 0,
+  },
+  'deformation.bend.captureOriginX': {
+    id: 'deformation.bend.captureOriginX', group: 'deformation', label: 'Capture Origin X',
+    layoutAffecting: false, interpolation: 'numeric', defaultValue: 0,
+  },
+  'deformation.bend.captureOriginY': {
+    id: 'deformation.bend.captureOriginY', group: 'deformation', label: 'Capture Origin Y',
+    layoutAffecting: false, interpolation: 'numeric', defaultValue: 0,
+  },
+  'deformation.bend.captureOriginZ': {
+    id: 'deformation.bend.captureOriginZ', group: 'deformation', label: 'Capture Origin Z',
+    layoutAffecting: false, interpolation: 'numeric', defaultValue: 0,
+  },
+  'deformation.bend.captureLength': {
+    id: 'deformation.bend.captureLength', group: 'deformation', label: 'Capture Length',
+    layoutAffecting: false, interpolation: 'numeric', defaultValue: 0,
+  },
+  'deformation.bend.lightAzimuth': {
+    id: 'deformation.bend.lightAzimuth', group: 'deformation', label: 'Light Azimuth',
+    layoutAffecting: false, interpolation: 'angle', defaultValue: 135,
+  },
+  'deformation.bend.lightElevation': {
+    id: 'deformation.bend.lightElevation', group: 'deformation', label: 'Light Elevation',
+    layoutAffecting: false, interpolation: 'angle', defaultValue: 55,
+  },
+  'deformation.bend.ambient': {
+    id: 'deformation.bend.ambient', group: 'deformation', label: 'Ambient Light',
+    layoutAffecting: false, interpolation: 'numeric', defaultValue: 0.82,
+  },
+  'deformation.bend.diffuse': {
+    id: 'deformation.bend.diffuse', group: 'deformation', label: 'Directional Light',
+    layoutAffecting: false, interpolation: 'numeric', defaultValue: 0.28,
+  },
+  'deformation.bend.specular': {
+    id: 'deformation.bend.specular', group: 'deformation', label: 'Highlight',
+    layoutAffecting: false, interpolation: 'numeric', defaultValue: 0.12,
+  },
+  'deformation.bend.roughness': {
+    id: 'deformation.bend.roughness', group: 'deformation', label: 'Roughness',
+    layoutAffecting: false, interpolation: 'numeric', defaultValue: 0.62,
   },
 
   // camera lens group — post-layout, no relayout needed

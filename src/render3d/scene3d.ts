@@ -119,6 +119,20 @@ export interface Plane3D {
   motionPathBasisY: Vec3
   motionPathBasisZ: Vec3
   cameraDepth: number
+  /**
+   * Bent surfaces shared by this plane, ordered from outermost ancestor to
+   * the plane itself.
+   *
+   * Explicit 3D descendants are rasterized into separate planes, so they can
+   * no longer receive Bend through an ancestor bitmap. Keeping the full owner
+   * chain and each owner's authored bounds lets the GPU preserve every parent
+   * curve and layer an independently keyframeable child Bend on top, while the
+   * child retains its own XYZ and rotation transform.
+   */
+  bendSources?: Array<{
+    nodeId: NodeId
+    rect: Rect
+  }>
   extractedFromParent?: boolean
   clips?: PlaneClip3D[]
 }
@@ -221,6 +235,11 @@ interface Inherited3D {
   opacity: number
 }
 
+interface BendSource3D {
+  nodeId: NodeId
+  rect: Rect
+}
+
 /**
  * Per-segment text must remain extracted for the lifetime of every authored
  * effect, not only while that particular track owns the playhead. Besides
@@ -321,6 +340,7 @@ export function createPlaneBuildContext(api: SceneAPI): PlaneBuildContext {
       const childRenderMode = child.transform.renderMode ?? 'flat'
       if (
         segmentTextNodeIds.has(childId) ||
+        layerHasBendDeformation(child) ||
         isAlwaysOnTopNode(child) ||
         childRenderMode === 'plane' ||
         childRenderMode === 'group3d' ||
@@ -367,6 +387,7 @@ export function createPlaneBuildContext(api: SceneAPI): PlaneBuildContext {
       const renderMode = child.transform.renderMode ?? 'flat'
       if (
         child.kind === 'video' ||
+        layerHasBendDeformation(child) ||
         isAlwaysOnTopNode(child) ||
         renderMode === 'plane' ||
         renderMode === 'group3d' ||
@@ -871,6 +892,7 @@ export function buildWorldPlanes(
     inherited: Inherited3D,
     activeClips: PlaneClip3D[] = [],
     insideAlwaysOnTopSubtree = false,
+    inheritedBendSources: readonly BendSource3D[] = [],
   ): void => {
     if (targetPathNodeIds && !targetPathNodeIds.has(id)) return
     const node = getNode(id)
@@ -940,7 +962,18 @@ export function buildWorldPlanes(
     const isRootChild = node.parent === rootId
     const independentNodes = options.independentNodes ?? false
     const isRequestedNode = !targetNodeIds || targetNodeIds.has(id)
-    const segmentText = segmentTextNodeIds.has(id)
+    const deformedNode = layerHasBendDeformation(node)
+    const bendSources = deformedNode
+      ? [...inheritedBendSources, { nodeId: id, rect }]
+      : inheritedBendSources
+    // A text layer on a bent surface is rasterized as one subdivided texture
+    // plane. The optimized segment-text mesh stores world-space glyph
+    // vertices, so extracting it would bypass the ancestor's local Bend field.
+    // The canvas painter still evaluates the live text effect every frame.
+    const segmentText =
+      segmentTextNodeIds.has(id) &&
+      !deformedNode &&
+      inheritedBendSources.length === 0
     const videoStackSibling = !!parent && hasDirectVideoChild(parent)
     const segmentStackSibling = !!parent && hasDirectSegmentTextChild(parent)
     const splitsSegmentStack = hasDirectSegmentTextChild(node)
@@ -949,6 +982,7 @@ export function buildWorldPlanes(
       isRequestedNode &&
       !isRoot &&
       (segmentText ||
+        deformedNode ||
         isAlwaysOnTopNode(node) ||
         independentNodes ||
         videoStackSibling ||
@@ -1031,6 +1065,12 @@ export function buildWorldPlanes(
         motionPathBasisY: { ...inherited.basisY },
         motionPathBasisZ: { ...inherited.basisZ },
         cameraDepth: cameraSpaceDepth(center, camera),
+        bendSources: bendSources.length
+          ? bendSources.map((source) => ({
+              nodeId: source.nodeId,
+              rect: { ...source.rect },
+            }))
+          : undefined,
         extractedFromParent:
           segmentText ||
           segmentStackSibling ||
@@ -1055,7 +1095,7 @@ export function buildWorldPlanes(
     ) {
       const childIds = context.childPaintOrderByParentId.get(id) ?? []
       for (const childId of childIds) {
-        visit(childId, nextInherited, nextClips, alwaysOnTop)
+        visit(childId, nextInherited, nextClips, alwaysOnTop, bendSources)
       }
     }
   }
@@ -1115,6 +1155,10 @@ export function buildWorldPlanes(
     )
   }
   return planes
+}
+
+function layerHasBendDeformation(node: Node): boolean {
+  return node.deformation?.kind === 'bend' && node.deformation.enabled
 }
 
 function unionRects(a: Rect, b: Rect): Rect {

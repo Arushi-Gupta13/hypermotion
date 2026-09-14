@@ -525,6 +525,76 @@ test('buildSceneBytes preserves a generic layer motion path', () => {
   assert.equal(validateScene(buildSceneBytes(scene)).ok, true)
 })
 
+test('buildSceneBytes preserves bend deformation and keyframes', () => {
+  const scene = sampleScene()
+  const title = scene.nodes?.title
+  if (!title) throw new Error('missing sample title')
+  title.deformation = {
+    kind: 'bend',
+    enabled: true,
+    angle: 120,
+    factor: 0.75,
+    bothDirections: true,
+    limitToRegion: true,
+    captureDirection: { x: 0, y: 1, z: 0 },
+    captureRotation: 12,
+    upDirection: { x: 1, y: 0, z: 0 },
+    upRotation: -8,
+    bendRotation: 20,
+    captureOrigin: { x: 16, y: -24, z: 4 },
+    captureLength: 480,
+    surfaceShading: true,
+    depthAware: true,
+    lightAzimuth: 135,
+    lightElevation: 55,
+    ambient: 0.82,
+    diffuse: 0.28,
+    specular: 0.12,
+    roughness: 0.62,
+    geometryDetail: 48,
+  }
+  scene.tracks = {
+    bend: {
+      id: 'bend',
+      nodeId: 'title',
+      propertyId: 'deformation.bend.angle',
+      keyframes: [
+        { id: 'start', time: 0, value: 0 },
+        { id: 'end', time: 1, value: 120 },
+      ],
+    },
+  }
+
+  const bytes = buildSceneBytes(scene)
+  const data = inspectScene(bytes)
+  const nodes = data.nodes as PlainSceneMap
+  const tracks = data.tracks as PlainSceneMap
+
+  assert.deepEqual(nodes.title?.deformation, title.deformation)
+  assert.equal(tracks.bend?.propertyId, 'deformation.bend.angle')
+  assert.equal(validateScene(bytes).ok, true)
+})
+
+test('validateScene rejects invalid bend deformation ranges', () => {
+  const scene = sampleScene()
+  const title = scene.nodes?.title
+  if (!title) throw new Error('missing sample title')
+  title.deformation = {
+    kind: 'bend',
+    angle: 720,
+    factor: 2,
+    captureLength: -1,
+    geometryDetail: 3,
+  }
+
+  const result = validateScene(buildSceneBytes(scene))
+  assert.equal(result.ok, false)
+  assert.match(result.errors.join('\n'), /angle must be between -360 and 360/)
+  assert.match(result.errors.join('\n'), /factor must be between 0 and 1/)
+  assert.match(result.errors.join('\n'), /captureLength must be at least 0/)
+  assert.match(result.errors.join('\n'), /geometryDetail must be an integer between 4 and 128/)
+})
+
 test('validateScene rejects malformed generic layer motion paths', () => {
   const scene = sampleScene()
   const title = scene.nodes?.title

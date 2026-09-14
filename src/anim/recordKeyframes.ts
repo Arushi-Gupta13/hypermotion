@@ -70,6 +70,30 @@ const MOTION_PATH_PROP_IDS: Partial<Record<string, PropertyId>> = {
   progress: 'motionPath.progress',
 }
 
+const DEFORMATION_PROP_IDS: Partial<Record<string, PropertyId>> = {
+  angle: 'deformation.bend.angle',
+  factor: 'deformation.bend.factor',
+  captureDirectionX: 'deformation.bend.captureDirectionX',
+  captureDirectionY: 'deformation.bend.captureDirectionY',
+  captureDirectionZ: 'deformation.bend.captureDirectionZ',
+  captureRotation: 'deformation.bend.captureRotation',
+  upDirectionX: 'deformation.bend.upDirectionX',
+  upDirectionY: 'deformation.bend.upDirectionY',
+  upDirectionZ: 'deformation.bend.upDirectionZ',
+  upRotation: 'deformation.bend.upRotation',
+  bendRotation: 'deformation.bend.bendRotation',
+  captureOriginX: 'deformation.bend.captureOriginX',
+  captureOriginY: 'deformation.bend.captureOriginY',
+  captureOriginZ: 'deformation.bend.captureOriginZ',
+  captureLength: 'deformation.bend.captureLength',
+  lightAzimuth: 'deformation.bend.lightAzimuth',
+  lightElevation: 'deformation.bend.lightElevation',
+  ambient: 'deformation.bend.ambient',
+  diffuse: 'deformation.bend.diffuse',
+  specular: 'deformation.bend.specular',
+  roughness: 'deformation.bend.roughness',
+}
+
 const LAYOUT_PROP_IDS: Partial<Record<string, PropertyId>> = {
   gap: 'layout.gap',
   direction: 'layout.direction',
@@ -124,6 +148,7 @@ export type PatchGroup =
   | 'size'
   | 'camera'
   | 'motionPath'
+  | 'deformation'
   | 'layout'
 
 export interface PatchKeyframeValue {
@@ -279,6 +304,8 @@ function propertyMapForGroup(
         ? SIZE_PROP_IDS
       : group === 'motionPath'
         ? MOTION_PATH_PROP_IDS
+        : group === 'deformation'
+          ? DEFORMATION_PROP_IDS
         : group === 'layout'
           ? LAYOUT_PROP_IDS
           : CAMERA_PROP_IDS

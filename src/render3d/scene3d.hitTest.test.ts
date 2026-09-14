@@ -7,6 +7,7 @@ import {
 } from '@/anim/textAnimations'
 import { defaultTextMotionPath } from '@/anim/textMotionPath'
 import { createSceneAPI } from '@/scene/doc'
+import { DEFAULT_BEND_DEFORMATION } from '@/scene/deformation'
 import type { SolvedLayout } from '@/layout'
 import {
   buildWorldPlanes,
@@ -18,6 +19,227 @@ import {
 } from '@/render3d/scene3d'
 
 describe('direct nested-layer hit testing', () => {
+  it('promotes a bent nested frame to a subtree plane', () => {
+    const api = createSceneAPI()
+    const rootId = api.createNode('frame', null, {
+      size: { width: 960, height: 540 },
+    })
+    const parentId = api.createNode('frame', rootId, {
+      size: { width: 400, height: 240 },
+    })
+    const bentId = api.createNode('frame', parentId, {
+      size: { width: 240, height: 120 },
+      deformation: { ...DEFAULT_BEND_DEFORMATION, angle: 60 },
+    })
+    const childId = api.createNode('rect', bentId, {
+      size: { width: 80, height: 40 },
+    })
+    const layout: SolvedLayout = {
+      [rootId]: { x: 0, y: 0, width: 960, height: 540 },
+      [parentId]: { x: 100, y: 100, width: 400, height: 240 },
+      [bentId]: { x: 140, y: 140, width: 240, height: 120 },
+      [childId]: { x: 160, y: 160, width: 80, height: 40 },
+    }
+    const camera = api.getActiveCamera()
+    if (!camera) throw new Error('Expected the default camera')
+    const resolvedCamera = resolveCamera3D(camera, undefined, {
+      width: 960,
+      height: 540,
+    })
+
+    const planes = buildWorldPlanes(api, layout, {}, resolvedCamera)
+    expect(planes.map((plane) => plane.nodeId)).toEqual([parentId, bentId])
+    expect(planes.find((plane) => plane.nodeId === bentId)?.contentMode).toBe(
+      'subtree',
+    )
+  })
+
+  it('shares an ancestor Bend with an extracted 3D child plane', () => {
+    const api = createSceneAPI()
+    const rootId = api.createNode('frame', null, {
+      size: { width: 960, height: 540 },
+    })
+    const bentId = api.createNode('frame', rootId, {
+      name: 'Bent surface',
+      size: { width: 400, height: 240 },
+      deformation: { ...DEFAULT_BEND_DEFORMATION, angle: 70 },
+    })
+    const childId = api.createNode('rect', bentId, {
+      name: 'Independent 3D child',
+      size: { width: 120, height: 64 },
+      transform: {
+        x: 0,
+        y: 0,
+        z: 0,
+        rotation: 0,
+        rotationX: 0,
+        rotationY: 0,
+        scaleX: 1,
+        scaleY: 1,
+        anchorX: 0.5,
+        anchorY: 0.5,
+        anchorZ: 0,
+        renderMode: 'plane',
+      },
+    })
+    const layout: SolvedLayout = {
+      [rootId]: { x: 0, y: 0, width: 960, height: 540 },
+      [bentId]: { x: 100, y: 80, width: 400, height: 240 },
+      [childId]: { x: 180, y: 120, width: 120, height: 64 },
+    }
+    const camera = api.getActiveCamera()
+    if (!camera) throw new Error('Expected the default camera')
+    const planes = buildWorldPlanes(
+      api,
+      layout,
+      {
+        [childId]: { z: 96, rotationY: 35 },
+      },
+      resolveCamera3D(camera, undefined, { width: 960, height: 540 }),
+    )
+    const parentPlane = planes.find((plane) => plane.nodeId === bentId)
+    const childPlane = planes.find((plane) => plane.nodeId === childId)
+
+    expect(parentPlane?.bendSources).toEqual([{
+      nodeId: bentId,
+      rect: layout[bentId],
+    }])
+    expect(childPlane?.bendSources).toEqual([{
+      nodeId: bentId,
+      rect: layout[bentId],
+    }])
+    expect(childPlane?.center.z).toBe(96)
+    expect(childPlane?.rotation.y).toBe(35)
+  })
+
+  it('keeps animated text on an inherited Bend as a live canvas plane', () => {
+    const api = createSceneAPI()
+    const rootId = api.createNode('frame', null, {
+      size: { width: 960, height: 540 },
+    })
+    const bentId = api.createNode('frame', rootId, {
+      size: { width: 400, height: 240 },
+      deformation: { ...DEFAULT_BEND_DEFORMATION, angle: 70 },
+    })
+    const textId = api.createNode('text', bentId, {
+      text: 'Animated on the curve',
+      size: { width: 220, height: 48 },
+      textAnimation: {
+        ...DEFAULT_TEXT_ANIMATION,
+        id: 'blur-slide',
+        applyTo: 'letters',
+      },
+      transform: {
+        x: 0,
+        y: 0,
+        z: 0,
+        rotation: 0,
+        rotationX: 0,
+        rotationY: 0,
+        scaleX: 1,
+        scaleY: 1,
+        anchorX: 0.5,
+        anchorY: 0.5,
+        anchorZ: 0,
+        renderMode: 'plane',
+      },
+    })
+    const layout: SolvedLayout = {
+      [rootId]: { x: 0, y: 0, width: 960, height: 540 },
+      [bentId]: { x: 100, y: 80, width: 400, height: 240 },
+      [textId]: { x: 180, y: 120, width: 220, height: 48 },
+    }
+    const camera = api.getActiveCamera()
+    if (!camera) throw new Error('Expected the default camera')
+    const textPlane = buildWorldPlanes(
+      api,
+      layout,
+      { [textId]: { textProgress: 0.5, z: 64 } },
+      resolveCamera3D(camera, undefined, { width: 960, height: 540 }),
+    ).find((plane) => plane.nodeId === textId)
+
+    expect(textPlane?.renderKind).toBe('canvas')
+    expect(textPlane?.bendSources?.map((source) => source.nodeId)).toEqual([
+      bentId,
+    ])
+    expect(textPlane?.center.z).toBe(64)
+  })
+
+  it('keeps a child Bend attached to its inherited parent Bend', () => {
+    const api = createSceneAPI()
+    const rootId = api.createNode('frame', null, {
+      size: { width: 960, height: 540 },
+    })
+    const parentId = api.createNode('frame', rootId, {
+      size: { width: 480, height: 320 },
+      deformation: { ...DEFAULT_BEND_DEFORMATION, angle: 70 },
+    })
+    const childId = api.createNode('frame', parentId, {
+      size: { width: 240, height: 160 },
+      deformation: { ...DEFAULT_BEND_DEFORMATION, angle: -35 },
+      transform: {
+        x: 0,
+        y: 0,
+        z: 0,
+        rotation: 0,
+        rotationX: 0,
+        rotationY: 0,
+        scaleX: 1,
+        scaleY: 1,
+        anchorX: 0.5,
+        anchorY: 0.5,
+        anchorZ: 0,
+        renderMode: 'plane',
+      },
+    })
+    const grandchildId = api.createNode('rect', childId, {
+      size: { width: 80, height: 48 },
+      transform: {
+        x: 0,
+        y: 0,
+        z: 0,
+        rotation: 0,
+        rotationX: 0,
+        rotationY: 0,
+        scaleX: 1,
+        scaleY: 1,
+        anchorX: 0.5,
+        anchorY: 0.5,
+        anchorZ: 0,
+        renderMode: 'plane',
+      },
+    })
+    const layout: SolvedLayout = {
+      [rootId]: { x: 0, y: 0, width: 960, height: 540 },
+      [parentId]: { x: 120, y: 80, width: 480, height: 320 },
+      [childId]: { x: 200, y: 140, width: 240, height: 160 },
+      [grandchildId]: { x: 240, y: 180, width: 80, height: 48 },
+    }
+    const camera = api.getActiveCamera()
+    if (!camera) throw new Error('Expected the default camera')
+    const planes = buildWorldPlanes(
+      api,
+      layout,
+      { [childId]: { z: 40 }, [grandchildId]: { z: 75, rotationX: 20 } },
+      resolveCamera3D(camera, undefined, { width: 960, height: 540 }),
+    )
+    const expectedStack = [parentId, childId]
+    const childPlane = planes.find((plane) => plane.nodeId === childId)
+    const grandchildPlane = planes.find(
+      (plane) => plane.nodeId === grandchildId,
+    )
+
+    expect(childPlane?.bendSources?.map((source) => source.nodeId)).toEqual(
+      expectedStack,
+    )
+    expect(grandchildPlane?.bendSources?.map((source) => source.nodeId)).toEqual(
+      expectedStack,
+    )
+    expect(childPlane?.center.z).toBe(40)
+    expect(grandchildPlane?.center.z).toBe(115)
+    expect(grandchildPlane?.rotation.x).toBe(20)
+  })
+
   it('expands flattened camera planes and hits the nested child', () => {
     const api = createSceneAPI()
     const rootId = api.createNode('frame', null, {

@@ -75,4 +75,26 @@ describe('recordKeyframes inspector coverage', () => {
       { propertyId: 'shape.arcInnerRadius', value: 0.55 },
     ])
   })
+
+  it('records bend geometry controls as independent tracks', () => {
+    expect(
+      keyframeValuesForPatch('deformation', {
+        angle: 90,
+        factor: 0.75,
+        captureDirectionX: 1,
+        captureOriginY: 24,
+        captureLength: 480,
+        lightAzimuth: 135,
+        roughness: 0.6,
+      }),
+    ).toEqual([
+      { propertyId: 'deformation.bend.angle', value: 90 },
+      { propertyId: 'deformation.bend.factor', value: 0.75 },
+      { propertyId: 'deformation.bend.captureDirectionX', value: 1 },
+      { propertyId: 'deformation.bend.captureOriginY', value: 24 },
+      { propertyId: 'deformation.bend.captureLength', value: 480 },
+      { propertyId: 'deformation.bend.lightAzimuth', value: 135 },
+      { propertyId: 'deformation.bend.roughness', value: 0.6 },
+    ])
+  })
 })

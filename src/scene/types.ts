@@ -466,6 +466,62 @@ export type BlendMode =
  */
 export type Position = 'flow' | 'absolute'
 
+/** A layer-local direction used by the GPU deformation system. */
+export interface DeformationVector3 {
+  x: number
+  y: number
+  z: number
+}
+
+/**
+ * Non-destructive circular bend applied after layout and before camera
+ * projection. Because it deforms the composited layer plane, the same model
+ * works for every paintable node kind, including whole frame/group subtrees.
+ */
+export interface BendDeformation {
+  kind: 'bend'
+  enabled: boolean
+  /** Bend amount in degrees across the capture region. */
+  angle: number
+  /** Blend between the undeformed (0) and fully bent (1) geometry. */
+  factor: number
+  /** Center the capture region around the origin instead of starting there. */
+  bothDirections: boolean
+  /** Keep geometry beyond the region tangent to its bent end. */
+  limitToRegion: boolean
+  /** Editor-only reference outline; never appears in exported frames. */
+  showOriginalGeometry: boolean
+  captureDirection: DeformationVector3
+  captureRotation: number
+  upDirection: DeformationVector3
+  upRotation: number
+  bendRotation: number
+  /** Layer-local origin measured from the layer's center. */
+  captureOrigin: DeformationVector3
+  /** Capture-region length in pixels. 0 means resolve from the layer bounds. */
+  captureLength: number
+  /** Shade the deformed surface from its reconstructed camera-space normals. */
+  surfaceShading: boolean
+  /** Let folded parts of this surface occlude one another by depth. */
+  depthAware: boolean
+  /** Studio-light orbit around the camera axis, in degrees. */
+  lightAzimuth: number
+  /** Studio-light height above the surface, in degrees. */
+  lightElevation: number
+  /** Base light retained on faces turned away from the studio light. */
+  ambient: number
+  /** Directional light contribution. */
+  diffuse: number
+  /** White highlight contribution. */
+  specular: number
+  /** Highlight spread: 0 is tight/glossy and 1 is broad/matte. */
+  roughness: number
+  /** GPU mesh detail. Kept static because changing topology is not interpolable. */
+  geometryDetail: number
+}
+
+export type LayerDeformation = BendDeformation
+
 interface NodeBase {
   id: NodeId
   name: string
@@ -518,6 +574,8 @@ interface NodeBase {
    * renderers do not need kind-specific path logic.
    */
   motionPath?: LayerMotionPath | null
+  /** Optional non-destructive layer deformation evaluated by the GPU renderer. */
+  deformation?: LayerDeformation | null
 }
 
 export interface FrameNode extends NodeBase {
@@ -1239,6 +1297,28 @@ export type PropertyId =
   | 'transform.anchorZ'
   // generic layer motion path — resolves into post-layout transform values
   | 'motionPath.progress'
+  // non-destructive layer deformation — post-layout, GPU evaluated
+  | 'deformation.bend.angle'
+  | 'deformation.bend.factor'
+  | 'deformation.bend.captureDirectionX'
+  | 'deformation.bend.captureDirectionY'
+  | 'deformation.bend.captureDirectionZ'
+  | 'deformation.bend.captureRotation'
+  | 'deformation.bend.upDirectionX'
+  | 'deformation.bend.upDirectionY'
+  | 'deformation.bend.upDirectionZ'
+  | 'deformation.bend.upRotation'
+  | 'deformation.bend.bendRotation'
+  | 'deformation.bend.captureOriginX'
+  | 'deformation.bend.captureOriginY'
+  | 'deformation.bend.captureOriginZ'
+  | 'deformation.bend.captureLength'
+  | 'deformation.bend.lightAzimuth'
+  | 'deformation.bend.lightElevation'
+  | 'deformation.bend.ambient'
+  | 'deformation.bend.diffuse'
+  | 'deformation.bend.specular'
+  | 'deformation.bend.roughness'
   // camera lens group — post-layout, cheap
   | 'camera.focusDistance'
   | 'camera.focusX'

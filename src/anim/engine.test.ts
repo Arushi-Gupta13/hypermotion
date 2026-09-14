@@ -187,6 +187,62 @@ describe('animation engine track preview', () => {
     })
   })
 
+  it('publishes continuous bend controls from ordinary keyframes', () => {
+    const api = createSceneAPI()
+    const nodeId = api.createNode('rect', null)
+    api.setTrack({
+      id: 'bend-angle-track',
+      nodeId,
+      propertyId: 'deformation.bend.angle',
+      defaultEasing: 'linear',
+      keyframes: [
+        { id: 'bend-start', time: 0, value: 0 },
+        { id: 'bend-end', time: 2, value: 180 },
+      ],
+    })
+    api.setTrack({
+      id: 'bend-factor-track',
+      nodeId,
+      propertyId: 'deformation.bend.factor',
+      defaultEasing: 'linear',
+      keyframes: [
+        { id: 'factor-start', time: 0, value: 0 },
+        { id: 'factor-end', time: 2, value: 1 },
+      ],
+    })
+    api.setTrack({
+      id: 'bend-light-track',
+      nodeId,
+      propertyId: 'deformation.bend.lightAzimuth',
+      defaultEasing: 'linear',
+      keyframes: [
+        { id: 'light-start', time: 0, value: -90 },
+        { id: 'light-end', time: 2, value: 90 },
+      ],
+    })
+    api.setTrack({
+      id: 'bend-roughness-track',
+      nodeId,
+      propertyId: 'deformation.bend.roughness',
+      defaultEasing: 'linear',
+      keyframes: [
+        { id: 'rough-start', time: 0, value: 0.2 },
+        { id: 'rough-end', time: 2, value: 0.8 },
+      ],
+    })
+
+    const engine = getAnimEngine()
+    engine.attach(api)
+    engine.seek(1)
+
+    expect(engine.getSnapshot()[nodeId]).toMatchObject({
+      bendAngle: 90,
+      bendFactor: 0.5,
+      bendLightAzimuth: 0,
+      bendRoughness: 0.5,
+    })
+  })
+
   it('publishes intermediate opacity for a 0 to 1 fade track', () => {
     const api = createSceneAPI()
     const nodeId = api.createNode('frame', null)
