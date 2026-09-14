@@ -1,3 +1,4 @@
+import { textShimmerFill } from '@/anim/textShimmer'
 // SPDX-License-Identifier: Apache-2.0
 import { programMediaRate } from '@/state/sequenceMediaClock'
 
@@ -632,6 +633,10 @@ export function ThreeSceneViewport({
         continue
       }
       if (node?.kind !== 'text' || !node.textAnimation) continue
+      if (node.textAnimation.id === 'shimmer' || api.getTracksForNode(id).some(track => track.textAnimation?.id === 'shimmer')) {
+        ranges.set(id, { start: 0, end: duration })
+        continue
+      }
       const engineDriven = api
         .getTracksForNode(id)
         .some(
@@ -2626,7 +2631,7 @@ function textSegmentTextureSignature(
     anim,
     config,
   )
-  let dynamicFrame: unknown = null
+  let dynamicFrame: unknown = config?.id === 'shimmer' ? textShimmerFill(config, playhead, anim?.fill ?? (node.appearance.fill?.kind === 'solid' ? node.appearance.fill.color : node.color)) : null
   if (config?.id === 'scramble' && !staticLetterScramble) {
     // Scramble changes glyph content, so it is the only segment effect that
     // needs frequent atlas uploads. Thirty texture updates per second keeps
@@ -3429,6 +3434,7 @@ function paintTextSegmentAtlasCell(
       -(entry.y - entry.padding),
     )
     const effectGradient =
+      config?.id === 'shimmer' ? textShimmerFill(config, playhead, anim?.fill ?? (node.appearance.fill?.kind === 'solid' ? node.appearance.fill.color : node.color)) :
       config?.id === 'gradient-reveal'
         ? config.mode === 'in'
           ? config.endGradient ?? config.startGradient
@@ -4969,6 +4975,17 @@ function paintAnimatedTextNode(
       : node.textAlignVertical === 'bottom'
         ? y + Math.max(0, maxHeight - textHeight)
         : y
+
+  if (config?.id === 'shimmer') {
+    const fill = textShimmerFill(config, playhead, anim?.fill ?? (node.appearance.fill?.kind === 'solid' ? node.appearance.fill.color : node.color))
+    if (fill.kind === 'linear') {
+      const gradient = ctx.createLinearGradient(config.direction === 'left' ? x + maxWidth : x, 0, config.direction === 'left' ? x : x + maxWidth, 0)
+      for (const stop of fill.stops) gradient.addColorStop(stop.at, stop.color)
+      ctx.fillStyle = gradient
+    }
+    paintText(ctx, text, x, alignedY, maxWidth, fontSize, lineHeight, authoredTracking, node.textAlign ?? 'start', node.textDecoration ?? 'none')
+    return
+  }
 
   if (!config) {
     paintText(

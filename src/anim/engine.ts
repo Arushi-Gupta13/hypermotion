@@ -668,7 +668,9 @@ function applyTextProgressTrack(
   if (kfs.length < 2) return
   const first = kfs[0]!
   const last = kfs[kfs.length - 1]!
-  const textAnimation = track.textAnimation ?? undefined
+  const textAnimation = track.textAnimation?.id === 'shimmer'
+    ? { ...track.textAnimation, startTime: first.time, duration: Math.max(0.05, last.time - first.time), easingPresetId: 'custom' as const, customEasing: first.easingOut ?? track.defaultEasing }
+    : track.textAnimation ?? undefined
   const mode = textAnimation?.mode
   if (t < first.time) {
     if ((mode === 'in' || mode === 'out') && typeof first.value === 'number') {
@@ -713,7 +715,7 @@ function applyTextProgressTrack(
   if (typeof av !== 'number' || typeof bv !== 'number') return
   into.textProgress = av + (bv - av) * u
   into.textTimelineProgress = av + (bv - av) * rawU
-  if (track.textAnimation) into.textAnimation = track.textAnimation
+  if (textAnimation) into.textAnimation = textAnimation
 }
 
 /**
