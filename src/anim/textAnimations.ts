@@ -21,6 +21,7 @@ import {
 import { parseNumberFlowText } from './numberFlow'
 
 export type TextAnimationId =
+  | 'shimmer'
   | 'appear'
   | 'fade'
   | 'slide-up'
@@ -113,6 +114,11 @@ export interface TextAnimationConfig {
    */
   motionPath: TextMotionPath | null
   blurRadius: number
+  shimmerColor?: string
+  shimmerOpacity?: number
+  shimmerWidth?: number
+  shimmerBlur?: number
+  shimmerLoop?: boolean
   startColor?: string
   endColor?: string
   startGradient?: Fill
@@ -178,6 +184,7 @@ export const DEFAULT_TEXT_ANIMATION: TextAnimationConfig = {
 }
 
 export const TEXT_ANIMATION_PRESETS: TextAnimationPreset[] = [
+  { id: 'shimmer', label: 'Shimmer', category: 'Color', defaults: { applyTo: 'layer', duration: 2, delay: 0, travelDistance: 0, blurRadius: 0, direction: 'right', easingPresetId: 'none', shimmerColor: '#ffffff', shimmerOpacity: 0.35, shimmerWidth: 0.25, shimmerBlur: 0.7, shimmerLoop: true } },
   { id: 'appear', label: 'Appear', category: 'Basic', defaults: { duration: 0.35, blurRadius: 0, travelDistance: 0 } },
   { id: 'fade', label: 'Fade', category: 'Basic', defaults: { duration: 0.5, blurRadius: 0, travelDistance: 0 } },
   { id: 'slide-up', label: 'Slide ↑', category: 'Slide', defaults: { direction: 'up', travelDistance: 0.5, blurRadius: 0 } },
@@ -574,6 +581,13 @@ export function normalizeTextAnimation(raw: unknown): TextAnimationConfig | null
   const staggerCurve = normalizeTextStaggerCurve(value.staggerCurve)
   return enforceTextAnimationPresetConstraints({
     ...base,
+    ...(id === 'shimmer' ? {
+    shimmerColor: typeof value.shimmerColor === 'string' && /^#[0-9a-f]{6}$/i.test(value.shimmerColor) ? value.shimmerColor : base.shimmerColor,
+    shimmerOpacity: clamp(finiteNumber(value.shimmerOpacity, base.shimmerOpacity ?? 0.35), 0, 1),
+    shimmerWidth: clamp(finiteNumber(value.shimmerWidth, base.shimmerWidth ?? 0.25), 0.02, 1),
+    shimmerBlur: clamp(finiteNumber(value.shimmerBlur, base.shimmerBlur ?? 0.7), 0, 1),
+    shimmerLoop: typeof value.shimmerLoop === 'boolean' ? value.shimmerLoop : true,
+    } : {}),
     mode: value.mode === 'out' ? 'out' : 'in',
     applyTo: isApplyTo(value.applyTo) ? value.applyTo : base.applyTo,
     order: value.order === 'backward' ? 'backward' : 'forward',
@@ -663,6 +677,7 @@ export function normalizeTextAnimation(raw: unknown): TextAnimationConfig | null
 function enforceTextAnimationPresetConstraints(
   config: TextAnimationConfig,
 ): TextAnimationConfig {
+  if (config.id === 'shimmer') return { ...config, applyTo: 'layer', delay: 0, travelDistance: 0 }
   if (config.id !== 'number-flow') return config
   return {
     ...config,

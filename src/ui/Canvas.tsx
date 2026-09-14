@@ -1,3 +1,4 @@
+import { textShimmerFill } from '@/anim/textShimmer'
 // SPDX-License-Identifier: Apache-2.0
 import { useSequenceExportPreview } from '@/export/sequencePreview'
 import { useSequenceMediaClock } from '@/state/sequenceMediaClock'
@@ -5390,6 +5391,7 @@ function TextGlyphs({
           color: 'transparent',
         }
       : { color: node.color }),
+    ...(textAnimation?.id === 'shimmer' ? { color: effectiveFill?.kind === 'solid' ? effectiveFill.color : node.color, background: undefined, WebkitTextFillColor: undefined } : {}),
     textAlign,
     whiteSpace: hugWidth ? 'pre' : 'pre-wrap',
     wordBreak: hugWidth ? 'normal' : 'break-word',
@@ -5846,6 +5848,7 @@ function textAnimationSegmentStyle(
     transform: transforms.length > 0 ? transforms.join(' ') : undefined,
     transformOrigin: '50% 50%',
     transformStyle: motion && motion.z !== 0 ? 'preserve-3d' : undefined,
+    ...(config.id === 'shimmer' ? { background: fillToCss(textShimmerFill(config, playhead, typeof sharedStyle.color === 'string' ? sharedStyle.color : undefined)), backgroundClip: 'text', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', color: 'transparent' } : {}),
     willChange: 'transform, opacity, filter, clip-path, letter-spacing',
   }
 }

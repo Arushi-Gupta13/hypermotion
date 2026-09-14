@@ -1122,3 +1122,20 @@ body[data-preview-mode='1'] [data-canvas-root] {
     transform: translateX(0) scale(1);
   }
 }
+
+/* Shimmer preview remains confined to the glyphs. */
+.hm-text-preset-shimmer {
+  background: linear-gradient(90deg, #777 0%, #777 35%, #fff 50%, #777 65%, #777 100%);
+  background-size: 250% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: hm-shimmer-sweep 2s linear infinite;
+}
+@keyframes hm-shimmer-sweep {
+  from { background-position: 150% 0; }
+  to { background-position: -50% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hm-text-preset-shimmer { animation: none; background-position: 50% 0; }
+}

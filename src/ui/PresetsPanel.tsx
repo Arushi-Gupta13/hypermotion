@@ -1151,7 +1151,7 @@ function TextAnimationPanel({ playhead }: { playhead: number }) {
             Change
           </button>
         </div>
-        <div className="border-t border-border p-2.5">
+        {current.id !== 'shimmer' ? <div className="border-t border-border p-2.5">
           <SquircleSurface
             radius={6}
             className="hm-control-surface hm-control-compact hm-inspector-segmented"
@@ -1172,7 +1172,7 @@ function TextAnimationPanel({ playhead }: { playhead: number }) {
               </button>
             ))}
           </SquircleSurface>
-        </div>
+        </div> : null}
       </div>
 
       {showPicker ? (
@@ -1594,7 +1594,7 @@ function TextAnimationPanel({ playhead }: { playhead: number }) {
         ) : null}
           </>
         ) : null}
-        <ParamRow label="Segment duration">
+        <ParamRow label={current.id === 'shimmer' ? 'Sweep duration' : 'Segment duration'}>
           <TimeField
             value={Math.round(current.duration * 1000)}
             onCommit={(ms) => patch({ duration: ms / 1000 })}
@@ -1603,6 +1603,30 @@ function TextAnimationPanel({ playhead }: { playhead: number }) {
             width="w-24"
           />
         </ParamRow>
+        {current.id === 'shimmer' ? (
+          <>
+            <ParamRow label="Highlight color">
+              <input type="color" aria-label="Shimmer highlight color" value={current.shimmerColor ?? '#ffffff'} onChange={(event) => patch({ shimmerColor: event.target.value })} />
+            </ParamRow>
+            <ParamRow label="Base text opacity">
+              <NumberField value={Math.round((current.shimmerOpacity ?? 0.35) * 100)} onCommit={(value) => patch({ shimmerOpacity: value / 100 })} min={0} max={100} suffix="%" width="w-24" />
+            </ParamRow>
+            <ParamRow label="Highlight width">
+              <NumberField value={Math.round((current.shimmerWidth ?? 0.25) * 100)} onCommit={(value) => patch({ shimmerWidth: value / 100 })} min={2} max={100} suffix="%" width="w-24" />
+            </ParamRow>
+            <ParamRow label="Highlight blur">
+              <NumberField value={Math.round((current.shimmerBlur ?? 0.7) * 100)} onCommit={(value) => patch({ shimmerBlur: value / 100 })} min={0} max={100} suffix="%" width="w-24" />
+            </ParamRow>
+            <ParamRow label="Sweep direction">
+              <select aria-label="Shimmer direction" value={current.direction === 'left' ? 'left' : 'right'} onChange={(event) => patch({ direction: event.target.value as 'left' | 'right' })}>
+                <option value="right">Left to right</option><option value="left">Right to left</option>
+              </select>
+            </ParamRow>
+            <ParamRow label="Loop">
+              <input type="checkbox" aria-label="Loop shimmer" checked={current.shimmerLoop !== false} onChange={(event) => patch({ shimmerLoop: event.target.checked })} />
+            </ParamRow>
+          </>
+        ) : null}
         {current.id === 'gradient-reveal' ? (
           <>
             <ParamRow label="Start gradient">
@@ -1661,7 +1685,7 @@ function TextAnimationPanel({ playhead }: { playhead: number }) {
           <>
             <EasingPicker
               title={null}
-              allowedPresetIds={[...TEXT_EASING_PRESETS]}
+              allowedPresetIds={current.id === 'shimmer' ? undefined : [...TEXT_EASING_PRESETS]}
               presetId={current.easingPresetId}
               strength={current.easingStrength}
               easingValue={
@@ -1683,7 +1707,7 @@ function TextAnimationPanel({ playhead }: { playhead: number }) {
         ) : null}
       </ControlCard>
 
-      {!isNumberFlow ? (
+      {!isNumberFlow && current.id !== 'shimmer' ? (
         <ControlCard title="Text">
         <ParamRow label="Apply effect to">
           <SelectField<TextAnimationApplyTo>
