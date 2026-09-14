@@ -51,7 +51,7 @@ export function SceneNavigator() {
   const setTimelineScope = useUI((state) => state.setTimelineScope)
   const setPreviewScope = useUI((state) => state.setPreviewScope)
   const showToast = useToast((state) => state.show)
-  const [dragOverId, setDragOverId] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<{ id: string; side: 'before' | 'after' } | null>(null)
   const [transferBusy, setTransferBusy] = useState(false)
   const [sceneStripFade, setSceneStripFade] = useState({
     left: false,
@@ -325,9 +325,13 @@ export function SceneNavigator() {
   const onDrop = (event: DragEvent, item: SequenceItem, index: number) => {
     event.preventDefault()
     const dragged = event.dataTransfer.getData(SCENE_ITEM_DRAG_TYPE)
-    setDragOverId(null)
+    setDropTarget(null)
     if (!dragged || dragged === item.id) return
-    project.reorderSequenceItem(dragged, index)
+    const bounds = event.currentTarget.getBoundingClientRect()
+    const insertionIndex = index + (event.clientX >= bounds.left + bounds.width / 2 ? 1 : 0)
+    const fromIndex = items.findIndex((candidate) => candidate.id === dragged)
+    if (fromIndex < 0) return
+    project.reorderSequenceItem(dragged, insertionIndex - (fromIndex < insertionIndex ? 1 : 0))
   }
 
   return (
@@ -385,7 +389,7 @@ export function SceneNavigator() {
                     scene={composition}
                     selected={selected}
                     program={programSequenceItemId === item.id}
-                    dragOver={dragOverId === item.id}
+                    dropSide={dropTarget?.id === item.id ? dropTarget.side : null}
                     rootBackground={rootBackground(sceneApi, composition)}
                     onSelect={() => selectItem(item)}
                     onDuplicate={() => duplicate(item, index)}
@@ -407,13 +411,14 @@ export function SceneNavigator() {
                     onDragOver={(event) => {
                       event.preventDefault()
                       event.dataTransfer.dropEffect = 'move'
-                      setDragOverId(item.id)
+                      const bounds = event.currentTarget.getBoundingClientRect()
+                      setDropTarget({ id: item.id, side: event.clientX < bounds.left + bounds.width / 2 ? 'before' : 'after' })
                     }}
-                    onDragLeave={() =>
-                      setDragOverId((current) =>
-                        current === item.id ? null : current,
-                      )
-                    }
+                    onDragLeave={(event) => {
+                      if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
+                      setDropTarget((current) => current?.id === item.id ? null : current)
+                    }}
+                    onDragEnd={() => setDropTarget(null)}
                     onDrop={(event) => onDrop(event, item, index)}
                   />
                 )
@@ -513,7 +518,7 @@ function SceneCard({
   scene,
   selected,
   program,
-  dragOver,
+  dropSide,
   rootBackground,
   onSelect,
   onDuplicate,
@@ -522,6 +527,7 @@ function SceneCard({
   onDragStart,
   onDragOver,
   onDragLeave,
+  onDragEnd,
   onDrop,
 }: {
   index: number
@@ -529,7 +535,7 @@ function SceneCard({
   scene: CompositionScene
   selected: boolean
   program: boolean
-  dragOver: boolean
+  dropSide: 'before' | 'after' | null
   rootBackground: string
   onSelect: () => void
   onDuplicate: () => void
@@ -537,7 +543,8 @@ function SceneCard({
   onToggleSkipped: () => void
   onDragStart: (event: DragEvent) => void
   onDragOver: (event: DragEvent) => void
-  onDragLeave: () => void
+  onDragLeave: (event: DragEvent) => void
+  onDragEnd: () => void
   onDrop: (event: DragEvent) => void
 }) {
   const cardRef = useRef<HTMLElement>(null)
@@ -560,7 +567,8 @@ function SceneCard({
     <article
       ref={cardRef}
       draggable
-      onDragStart={onDragStart}
+      onDragStart={(event) => { setTooltipPosition(null); onDragStart(event) }}
+      onDragEnd={onDragEnd}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
@@ -582,9 +590,17 @@ function SceneCard({
           ? 'ring-2 ring-inset ring-accent'
           : 'ring-1 ring-inset ring-border hover:ring-border-strong',
         program && !selected ? 'ring-emerald-400/70' : '',
-        dragOver ? 'scale-[0.96] ring-2 ring-inset ring-accent' : '',
+
       ].join(' ')}
     >
+      {dropSide ? (
+        <div
+          aria-hidden="true"
+          data-scene-drop-indicator={dropSide}
+          className="pointer-events-none absolute -top-1 -bottom-1 z-20 border-l-2 border-dashed border-accent"
+          style={dropSide === 'before' ? { left: -4 } : { right: -4 }}
+        />
+      ) : null}
       <button
         type="button"
         onClick={onSelect}
