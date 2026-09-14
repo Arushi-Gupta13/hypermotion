@@ -9,7 +9,10 @@ import {
   type DragEvent,
 } from 'react'
 import { createPortal } from 'react-dom'
-import { Download, Upload, Eye, EyeOff } from 'lucide-react'
+import { Download, Upload, Eye, EyeOff, Scissors } from 'lucide-react'
+import { getAnimEngine } from '@/anim'
+import { sceneSplitTime } from '@/project/splitScene'
+import type { ProjectAPI } from '@/project'
 import {
   exportCompositionToHypeBytes,
   importScenesFromHypeBytes,
@@ -161,6 +164,21 @@ export function SceneNavigator() {
       setPreviewScope('scene')
       setPlayhead(0)
     }
+  }
+
+  const splitScene = () => {
+    const ui = useUI.getState()
+    const sceneId = project.getActiveSceneId()
+    if (!sceneId || ui.timelineScope !== 'scene') return
+    const time = ui.playing ? getAnimEngine().getPlayhead() : ui.playhead
+    setPlaying(false)
+    const result = project.splitScene(sceneId, time, ui.selectedSequenceItemId ?? undefined)
+    if (!result) return
+    setSelectedSequenceItem(result.sequenceItemId, result.after.id)
+    setTimelineScope('scene')
+    setPreviewScope('scene')
+    setPlayhead(0)
+    showToast({ tone: 'success', title: 'Scene split', description: `${result.after.name} starts at the split point.` })
   }
 
   const selectTransferredScene = (itemId: string, sceneId: string) => {
@@ -429,6 +447,7 @@ export function SceneNavigator() {
               >
                 <AppIcon name="plus" size={16} />
               </button>
+              <SplitSceneButton project={project} busy={transferBusy} onSplit={splitScene} />
             </div>
           </div>
 
@@ -504,6 +523,29 @@ export function SceneNavigator() {
         </button>
       </div>
     </section>
+  )
+}
+
+function SplitSceneButton({ project, busy, onSplit }: { project: ProjectAPI; busy: boolean; onSplit: () => void }) {
+  const playhead = useUI((state) => state.playhead)
+  const scope = useUI((state) => state.timelineScope)
+  const active = project.getActiveScene()
+  const enabled = !busy && scope === 'scene' && active !== null &&
+    sceneSplitTime(active.duration, playhead, project.scene.getMeta().frameRate) !== null
+  return (
+    <button
+      type="button"
+      onClick={onSplit}
+      disabled={!enabled}
+      aria-label="Split scene at playhead"
+      title={scope !== 'scene' ? 'Switch to Scene to split at its playhead' : enabled
+        ? 'Split scene at playhead and open the second half'
+        : 'Move the playhead inside the scene to split it'}
+      className="flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-[var(--radius-panel)] border border-border bg-control px-2.5 text-xs text-text-muted hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      <Scissors size={16} aria-hidden="true" />
+      Split scene
+    </button>
   )
 }
 

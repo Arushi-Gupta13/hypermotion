@@ -124,6 +124,11 @@ export function transferCompositionScenes(
   requestedSceneIds?: readonly string[],
 ): SceneTransferResult {
   const warnings = compatibilityWarnings(source.scene, target.scene)
+  // Same-document duplication already runs in its caller's atomic gesture.
+  // Avoid merging a staged Yjs update into that still-open transaction.
+  if (source.scene.doc === target.scene.doc) {
+    return { ...transferCompositionScenesIntoDocument(source, target, requestedSceneIds), warnings }
+  }
   // A brand-new export document has no user state to protect. All live-editor
   // imports take the staged path below so a malformed donor cannot leave half
   // of its graph in the target document.

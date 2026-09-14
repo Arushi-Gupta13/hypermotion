@@ -231,8 +231,18 @@ export function useKeyboardShortcuts() {
         e.preventDefault()
         const mgr = undoManagerRef.current
         if (!mgr) return
+        const previousSceneId = project.getActiveSceneId()
         if (e.shiftKey) mgr.redo()
         else mgr.undo()
+        const activeScene = project.getActiveScene()
+        if (activeScene && activeScene.id !== previousSceneId) {
+          const item = project.getSequenceItems().find((entry) => entry.sceneId === activeScene.id)
+          if (item) {
+            const ui = useUI.getState()
+            ui.setSelectedSequenceItem(item.id, activeScene.id)
+            ui.setPlayhead(Math.min(ui.playhead, activeScene.duration))
+          }
+        }
         return
       }
 

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { UNDOABLE_GESTURE_ORIGIN } from '@/scene/undo'
+import { transferCompositionScenes } from './sceneTransfer'
+import { rebaseSceneNodes, sceneSplitTime, sliceComposition, splitOccurrence, type SplitSceneResult } from './splitScene'
 
 import * as Y from 'yjs'
 import type { Node, NodeId, SceneMeta, Track } from '@/scene'
@@ -60,6 +62,8 @@ export interface ProjectAPI {
   activateScene(id: string): void
   createScene(input?: CreateCompositionInput): CompositionScene
   duplicateScene(id: string, insertAt?: number): CompositionScene | null
+  /** Split a composition at a local playhead and open its independent second half. */
+  splitScene(id: string, time: number, selectedItemId?: string): SplitSceneResult | null
   /**
    * Register a composition whose nodes have already been cloned into this
    * document. This narrow entry point is used by cross-file scene transfer;
@@ -535,6 +539,64 @@ export function createProjectAPI(api: SceneAPI): ProjectAPI {
       projectApi.addSequenceItem(newId, insertAt)
       projectApi.activateScene(newId)
       return copied
+    },
+
+    splitScene: (id, requestedTime, selectedItemId) => {
+      ensureInitialized()
+      const source = readScene(id)
+      if (!source) return null
+      const time = sceneSplitTime(source.duration, requestedTime, api.getMeta().frameRate)
+      if (time === null) return null
+      const oldItems = orderedItems()
+      const selected = oldItems.find((item) => item.id === selectedItemId && item.sceneId === id)
+        ?? oldItems.find((item) => item.sceneId === id)
+      if (!selected) return null
+      const originalNodeIds = new Set(api.getAllNodeIds())
+      let result: SplitSceneResult | null = null
+      api.doc.transact(() => {
+        // The transfer path clones dependencies, cameras, animation groups and
+        // internal node references, not just the visible root's descendants.
+        const transferred = transferCompositionScenes(projectApi, projectApi, [id]).scenes[0]!
+        const copied = readScene(transferred.sceneId)!
+        const copiedNodes = new Set(api.getAllNodeIds().filter((nodeId) => !originalNodeIds.has(nodeId)))
+        const before = sliceComposition(api, source, 0, time)
+        const after = sliceComposition(api, copied, time, source.duration)
+        const names = new Set(projectApi.getScenes().map((composition) => composition.name))
+        let suffix = 2
+        let name = `${source.name} (split)`
+        while (names.has(name)) name = `${source.name} (split ${suffix++})`
+        after.name = name
+        rebaseSceneNodes(api, copiedNodes, time)
+        api.setNodeProperty(after.rootNodeId, 'name', name)
+        compositions.set(id, before)
+        compositions.set(after.id, after)
+
+        // Every use of this composition keeps its authored trim, speed, skip,
+        // soundtrack setting and outgoing transition. Only spanning uses grow
+        // a second occurrence, joined by a cut.
+        sequenceItems.delete(transferred.sequenceItemId)
+        const nextItems: SequenceItem[] = []
+        let nextSelected: SequenceItem | undefined
+        for (const item of oldItems) {
+          const pieces = item.sceneId === id ? splitOccurrence(item, source, after.id, time) : [item]
+          nextItems.push(...pieces)
+          if (item.id === selected.id) {
+            nextSelected = pieces.find((piece) => piece.sceneId === after.id)
+            if (!nextSelected) {
+              // A trim/work area can omit the new half from Master. Keep it
+              // editable in the filmstrip without extending Master playback.
+              nextSelected = { id: uniqueId('item'), sceneId: after.id, skipped: true }
+              nextItems.push(nextSelected)
+            }
+          }
+        }
+        for (const item of nextItems) sequenceItems.set(item.id, item)
+        sequenceOrder.delete(0, sequenceOrder.length)
+        sequenceOrder.push(nextItems.map((item) => item.id))
+        writeLegacyProjection(after)
+        result = { before, after, sequenceItemId: nextSelected!.id, time }
+      }, UNDOABLE_GESTURE_ORIGIN)
+      return result
     },
 
     registerTransferredScene: (composition, insertAt) => {
