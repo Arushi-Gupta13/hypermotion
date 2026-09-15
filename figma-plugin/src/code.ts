@@ -631,17 +631,22 @@ async function captureVector(
   const fillGeometry = cloneVectorPaths(geometry.fillGeometry)
   const strokeGeometry = cloneVectorPaths(geometry.strokeGeometry)
   const primitive = captureVectorPrimitive(node)
-  // Most Figma vectors expose the same shape through vectorPaths and
-  // fill/stroke geometry. Reading vectorNetwork as well can be extremely
-  // expensive on imported icon sets, so only request it when the cheaper
-  // native representations are absent.
+  // Stars, polygons, and booleans often have vectorPaths that Hyper Motion
+  // cannot turn into native points. Always capture the network for those.
+  // For plain VECTOR layers, skip the network when cheaper path data exists
+  // (icon-set copies can be huge).
   const hasDirectGeometry =
     vectorPaths.length > 0 ||
     fillGeometry.length > 0 ||
     strokeGeometry.length > 0
-  const vectorNetwork = hasDirectGeometry
-    ? undefined
-    : await readVectorNetwork(node, assets)
+  const needsVectorNetwork =
+    !hasDirectGeometry ||
+    node.type === 'STAR' ||
+    node.type === 'POLYGON' ||
+    node.type === 'BOOLEAN_OPERATION'
+  const vectorNetwork = needsVectorNetwork
+    ? await readVectorNetwork(node, assets)
+    : undefined
   const advancedStroke = readAdvancedStrokeMetadata(node)
   const hasEditableGeometry =
     vectorPaths.length > 0 ||
@@ -649,44 +654,31 @@ async function captureVector(
     strokeGeometry.length > 0 ||
     !!vectorNetwork
 
-  // Primitive metadata describes how Figma authored the layer but is not a
-  // renderable path in Hyper Motion. Unsupported native features are likewise
-  // only partially representable. Export SVG for either case while retaining
-  // the native data for future editing support.
-  const unsupportedBeforeSvg = detectUnsupportedVectorFeatures(
-    node,
-    base,
-    '',
-    vectorNetwork,
-  )
-  const needsSvgFallback =
-    !hasEditableGeometry || unsupportedBeforeSvg.length > 0
   let svg = ''
   let reason = rasterReason
-  if (needsSvgFallback) {
-    try {
-      svg = await withTimeout(
-        (
-          node as unknown as {
-            exportAsync: (s: ExportSettingsSVGString) => Promise<string>
-          }
-        ).exportAsync({
-          format: 'SVG_STRING',
-          svgOutlineText: true,
-          svgIdAttribute: true,
-          // Preserve inside/outside strokes with Figma's precise mask form.
-          svgSimplifyStroke: false,
-        }),
-        VECTOR_EXPORT_TIMEOUT_MS,
-        `SVG export for "${node.name}"`,
-      )
-      svg = sanitizeSvgForTransport(svg)
-    } catch (err) {
-      console.warn('[hyper-motion] SVG export failed', err)
-      reason =
-        reason ??
-        `Figma's SVG fallback did not finish within ${VECTOR_EXPORT_TIMEOUT_MS / 1000}s. Hyper Motion will try a PNG fallback.`
-    }
+  // Always export SVG. Hyper Motion used to skip this when vectorPaths
+  // existed, then fell back to a bitmap if those paths failed to parse.
+  try {
+    svg = await withTimeout(
+      (
+        node as unknown as {
+          exportAsync: (s: ExportSettingsSVGString) => Promise<string>
+        }
+      ).exportAsync({
+        format: 'SVG_STRING',
+        svgOutlineText: true,
+        svgIdAttribute: true,
+        svgSimplifyStroke: false,
+      }),
+      VECTOR_EXPORT_TIMEOUT_MS,
+      `SVG export for "${node.name}"`,
+    )
+    svg = sanitizeSvgForTransport(svg)
+  } catch (err) {
+    console.warn('[hyper-motion] SVG export failed', err)
+    reason =
+      reason ??
+      `Figma's SVG fallback did not finish within ${VECTOR_EXPORT_TIMEOUT_MS / 1000}s. Hyper Motion will try a PNG fallback.`
   }
 
   const unsupported = detectUnsupportedVectorFeatures(
@@ -706,7 +698,7 @@ async function captureVector(
   // the large raster payload paid by every v1 capture.
   let rasterPng = ''
   const requiresRaster =
-    (needsSvgFallback && !svg.trim()) || base.width < 1 || base.height < 1
+    !svg.trim() || base.width < 1 || base.height < 1
   if (requiresRaster) {
     try {
       const bytes = await withTimeout(
@@ -726,7 +718,7 @@ async function captureVector(
         'Figma could not export this vector as a fallback image. The SVG may not match exactly.'
     }
   }
-  if (!svg.trim() && needsSvgFallback) {
+  if (!svg.trim()) {
     reason =
       reason ??
       'Figma returned an empty SVG for this vector. Hyper Motion used a PNG fallback to preserve the visual result.'

@@ -64,9 +64,8 @@ export function resolveCursorVariantKeyframeSelection(
   const states = keyframes.map((keyframe) => {
     const value = keyframe!.value
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-    return typeof value.State === 'string' && stateValues.includes(value.State)
-      ? value.State
-      : null
+    const state = (value as Record<string, unknown>).State
+    return typeof state === 'string' && stateValues.includes(state) ? state : null
   })
   const firstState = states[0] ?? null
   const currentState = states.every((state) => state === firstState)
@@ -99,7 +98,7 @@ export function setSelectedCursorVariantKeyframeState(
       current &&
       typeof current === 'object' &&
       !Array.isArray(current) &&
-      current.State === state &&
+      (current as Record<string, unknown>).State === state &&
       Object.keys(current).length === 1
     ) {
       return keyframe

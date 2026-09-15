@@ -6,6 +6,7 @@ import { UNDOABLE_GESTURE_ORIGIN } from '@/scene/undo'
 import {
   effectIdFromBlurPropertyId,
   effectStableId,
+  isEditableVectorNode,
   useSceneAPI,
 } from '@/scene'
 import type {
@@ -217,6 +218,10 @@ export function useKeyboardShortcuts() {
       // and "clear selection" to fire on one keypress.
       if (e.key === 'Escape') {
         if (useUI.getState().contextMenu) return
+        if (useUI.getState().editingVectorId) {
+          useUI.getState().setEditingVectorId(null)
+          return
+        }
         if (inField && target) target.blur()
         clearSelection()
         return
@@ -699,6 +704,11 @@ export function useKeyboardShortcuts() {
           if (onlyNode && onlyNode.kind === 'text') {
             e.preventDefault()
             useUI.getState().setEditingTextId(onlyNode.id)
+            return
+          }
+          if (isEditableVectorNode(onlyNode)) {
+            e.preventDefault()
+            useUI.getState().setEditingVectorId(onlyNode.id)
             return
           }
         }

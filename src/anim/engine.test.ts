@@ -318,6 +318,91 @@ describe('animation engine track preview', () => {
     )
   })
 
+  it('interpolates vector fill and compatible path morphs', () => {
+    const api = createSceneAPI()
+    const from = {
+      version: 1 as const,
+      items: [
+        {
+          id: 'item-1',
+          geometry: {
+            points: {
+              a: { id: 'a', x: 0, y: 0 },
+              b: { id: 'b', x: 10, y: 0 },
+            },
+            segments: {
+              s: {
+                id: 's',
+                startPointId: 'a',
+                endPointId: 'b',
+                kind: 'line' as const,
+              },
+            },
+            contours: [
+              { id: 'c', segmentIds: ['s'], closed: false, fillRule: 'nonzero' as const },
+            ],
+          },
+          fills: [
+            {
+              id: 'fill-1',
+              kind: 'solid' as const,
+              color: '#000000',
+              visible: true,
+              opacity: 1,
+              blendMode: 'normal' as const,
+            },
+          ],
+          strokes: [],
+          transform: [1, 0, 0, 1, 0, 0] as [number, number, number, number, number, number],
+          opacity: 1,
+          blendMode: 'normal' as const,
+          visible: true,
+        },
+      ],
+    }
+    const to = structuredClone(from)
+    to.items[0]!.geometry.points.a = { id: 'a', x: 20, y: 0 }
+    const nodeId = api.createNode('vector', null, { vector: from })
+    api.setTrack({
+      id: 'morph',
+      nodeId,
+      propertyId: 'vector.geometry',
+      defaultEasing: 'linear',
+      keyframes: [
+        { id: 'a', time: 0, value: from },
+        { id: 'b', time: 1, value: to },
+      ],
+    })
+    const solidPaint = (color: string) =>
+      ({
+        id: 'fill-1',
+        kind: 'solid' as const,
+        color,
+        visible: true,
+        opacity: 1,
+        blendMode: 'normal' as const,
+      })
+    api.setTrack({
+      id: 'vfill',
+      nodeId,
+      propertyId: 'vector.fill',
+      defaultEasing: 'linear',
+      keyframes: [
+        { id: 'a', time: 0, value: solidPaint('#000000') },
+        { id: 'b', time: 1, value: solidPaint('#ffffff') },
+      ],
+    })
+    const engine = getAnimEngine()
+    engine.attach(api)
+    engine.seek(0.5)
+    const snap = engine.getSnapshot()[nodeId]
+    expect(snap?.vectorGeometry?.items[0]?.geometry.points.a?.x).toBe(10)
+    expect(snap?.vectorFill?.kind).toBe('solid')
+    expect(
+      snap?.vectorFill?.kind === 'solid' ? snap.vectorFill.color : '',
+    ).toMatch(/^oklch\(/)
+  })
+
   it('interpolates an imported hex root fill through an OKLCH keyframe', () => {
     const api = createSceneAPI()
     const rootId = api.createNode('frame', null, {

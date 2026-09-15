@@ -36,10 +36,25 @@ import {
   clampLayerBlurAmount,
   effectBlurPropertyId,
   effectStableId,
+  isEditableVectorNode,
+  mergeLayerBend,
   normalizeCameraScrollSensitivity,
   normalizeEllipseArc,
   normalizeLayerZIndex,
   normalizeLayerDeformation,
+  primaryVectorFill,
+  primaryVectorStroke,
+  defaultVectorStroke,
+  applyMorphTarget,
+  applyVectorFill,
+  applyVectorStroke,
+  cloneVectorDocument,
+  vectorPaintToFill,
+  fillToVectorPaint,
+  MorphPathError,
+  parseMorphPathInput,
+  vectorGeometryToPathData,
+  emptyVectorGeometry,
   useSceneAPI,
   useSceneVersion,
 } from '@/scene'
@@ -69,6 +84,12 @@ import type {
   Interaction,
   InteractionEventKind,
   VariantTransition,
+  VectorNode,
+  VectorPaint,
+  VectorStroke,
+  Track,
+  Keyframe,
+  LayerBend,
 } from '@/scene'
 import { isImageFile } from '@/ui/importImage'
 import {
@@ -5188,6 +5209,14 @@ function NodeDetails({ node, api }: { node: Node; api: SceneAPI }) {
         <>{/* camera path emits its own sections below */}</>
       )}
 
+      {node.kind === 'vector' ? (
+        <VectorSection node={node} api={api} />
+      ) : null}
+
+      {node.kind !== 'camera' && node.kind !== 'audio' ? (
+        <LayerBendSection node={node} api={api} />
+      ) : null}
+
       {node.kind !== 'camera' && (
         <EffectsSection
           nodeId={node.id}
@@ -8740,6 +8769,436 @@ function ImageSection({ node, api }: { node: ImageNode; api: SceneAPI }) {
   )
 }
 
+/**
+ * A non-keyframed Fill/Stroke edit (Auto Key off) commits onto `node.vector`
+ * — the current live document — but a `vector.geometry` track's keyframes
+ * each carry their own embedded paint (so pasted shapes can each keep their
+ * own color/gradient). Without this, editing Fill while such a track exists
+ * would recolor only whichever instant the playhead happened to be on,
+ * leaving every other keyframe's shape showing its old paint — a plain
+ * "change the color" edit reads as broken. Auto Key stays exempt: a
+ * keyframed edit intentionally targets one instant.
+ */
+/**
+ * Each shape keyframe is its own figure with its own paint — changing the
+ * triangle's fill must never bleed into the square's, and vice versa. So a
+ * non-keyframed Fill/Stroke edit (Auto Key off) only patches the ONE
+ * `vector.geometry` keyframe sitting at the current playhead (same
+ * tolerance as the rest of the keyframe system) — not every keyframe on the
+ * track. Off a keyframe entirely, there's no single figure to attribute the
+ * edit to, so this is a no-op and the plain `node.vector` write already
+ * made by the caller is all that happens.
+ */
+/**
+ * Which keyframe "owns" the canvas at `playhead` — same rule the engine
+ * itself uses (`applyTrack` in engine.ts): before the first keyframe or
+ * after the last, the boundary keyframe holds steady, not just the exact
+ * instant it sits at. A plain `findKeyframeAt` tolerance check misses that
+ * — scrubbing past the last keyframe (the settled "post-morph" shape) is a
+ * real, edit-worthy state, not an unmatched time.
+ */
+function resolveOwningGeometryKeyframe(
+  track: Track,
+  playhead: number,
+): Keyframe | null {
+  const kfs = track.keyframes
+  if (kfs.length === 0) return null
+  const first = kfs[0]!
+  const last = kfs[kfs.length - 1]!
+  if (kfs.length === 1 || playhead <= first.time) return first
+  if (playhead >= last.time) return last
+  return kfs.find((kf) => Math.abs(kf.time - playhead) <= 0.02) ?? null
+}
+
+function syncVectorPaintAtCurrentGeometryKeyframe(
+  api: SceneAPI,
+  nodeId: NodeId,
+  playhead: number,
+  apply: (vector: import('@/scene').VectorDocument) => import('@/scene').VectorDocument,
+): void {
+  const track = findTrack(api, nodeId, 'vector.geometry')
+  if (!track || track.keyframes.length === 0) return
+  const at = resolveOwningGeometryKeyframe(track, playhead)
+  if (!at) return
+  const keyframes = track.keyframes.map((kf) => {
+    if (kf.id !== at.id) return kf
+    const value = kf.value
+    if (!value || typeof value !== 'object' || !('items' in value)) return kf
+    return { ...kf, value: apply(value as import('@/scene').VectorDocument) }
+  })
+  api.setTrack({ ...track, keyframes })
+}
+
+function VectorSection({
+  node,
+  api,
+}: {
+  node: VectorNode
+  api: SceneAPI
+}) {
+  const setEditingVectorId = useUI((s) => s.setEditingVectorId)
+  const editingVectorId = useUI((s) => s.editingVectorId)
+  const anim = getAnimEngine().getSnapshot()[node.id]
+  const liveVector = anim?.vectorGeometry ?? node.vector
+  // Prefer the currently-owning keyframe's embedded paint (matches exactly
+  // what's on canvas) over the static `node.vector`, which goes stale the
+  // moment the playhead sits on a different keyframe than the one last
+  // edited.
+  const displayedFill: VectorPaint | null =
+    anim?.vectorFill ?? primaryVectorFill(liveVector) ?? primaryVectorFill(node.vector)
+  const displayedStroke: VectorStroke | null =
+    anim?.vectorStroke ??
+    primaryVectorStroke(liveVector) ??
+    primaryVectorStroke(node.vector)
+  const currentPath = vectorGeometryToPathData(
+    liveVector.items[0]?.geometry ?? emptyVectorGeometry(),
+  )
+  const [pathError, setPathError] = useState<string | null>(null)
+  const editable = isEditableVectorNode(node)
+  const fidelity =
+    node.importFidelity === 'editable'
+      ? 'Editable paths'
+      : node.importFidelity === 'preserved'
+        ? 'Preserved SVG — not point-editable'
+        : 'Raster fallback — not point-editable'
+
+  return (
+    <Section title="Vector">
+      <p className="text-[11px] leading-4 text-text-muted">{fidelity}</p>
+      {editable ? (
+        <button
+          type="button"
+          className="rounded px-2 py-1 text-left text-[11px] text-text hover:bg-panel-raised"
+          onClick={() =>
+            setEditingVectorId(editingVectorId === node.id ? null : node.id)
+          }
+        >
+          {editingVectorId === node.id
+            ? 'Done editing points'
+            : 'Edit points and handles'}
+        </button>
+      ) : null}
+      <FieldRow
+        label="Fill"
+        keyframe={
+          displayedFill ? (
+            <KeyframeButton
+              nodeId={node.id}
+              propertyId="vector.fill"
+              currentValue={displayedFill}
+            />
+          ) : null
+        }
+      >
+        <FillField
+          value={displayedFill ? vectorPaintToFill(displayedFill) : null}
+          onCommit={(fill) => {
+            if (!fill) return
+            const paint = fillToVectorPaint(fill)
+            const next = applyVectorFill(liveVector, paint)
+            const ui = useUI.getState()
+            api.doc.transact(() => {
+              api.setNodeProperty(node.id, 'vector', next)
+              if (ui.recording) {
+                recordKeyframesForPatch(api, node.id, ui.playhead, 'vector', {
+                  fill: paint,
+                })
+              } else {
+                stampToActiveTracksForPatch(
+                  api,
+                  node.id,
+                  ui.playhead,
+                  'vector',
+                  { fill: paint },
+                )
+                syncVectorPaintAtCurrentGeometryKeyframe(
+                  api,
+                  node.id,
+                  ui.playhead,
+                  (vector) => applyVectorFill(vector, paint),
+                )
+              }
+            }, UNDOABLE_GESTURE_ORIGIN)
+          }}
+        />
+      </FieldRow>
+      <FieldRow
+        label="Stroke"
+        keyframe={
+          displayedStroke ? (
+            <KeyframeButton
+              nodeId={node.id}
+              propertyId="vector.stroke"
+              currentValue={displayedStroke}
+            />
+          ) : null
+        }
+      >
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          <div className="min-w-0 flex-1">
+          <FillField
+            label=""
+            value={displayedStroke ? vectorPaintToFill(displayedStroke.paint) : null}
+            onCommit={(fill) => {
+              const ui = useUI.getState()
+              api.doc.transact(() => {
+                if (!fill) {
+                  // Clear — drop the primary stroke entirely.
+                  const next = cloneVectorDocument(liveVector)
+                  if (next.items[0]) next.items[0].strokes = []
+                  api.setNodeProperty(node.id, 'vector', next)
+                  if (!useUI.getState().recording) {
+                    syncVectorPaintAtCurrentGeometryKeyframe(
+                      api,
+                      node.id,
+                      useUI.getState().playhead,
+                      (vector) => {
+                        const cleared = cloneVectorDocument(vector)
+                        if (cleared.items[0]) cleared.items[0].strokes = []
+                        return cleared
+                      },
+                    )
+                  }
+                  return
+                }
+                const paint = fillToVectorPaint(fill)
+                const stroke = { ...(displayedStroke ?? defaultVectorStroke()), paint }
+                const next = applyVectorStroke(liveVector, stroke)
+                api.setNodeProperty(node.id, 'vector', next)
+                if (ui.recording) {
+                  recordKeyframesForPatch(api, node.id, ui.playhead, 'vector', {
+                    stroke,
+                  })
+                } else {
+                  stampToActiveTracksForPatch(
+                    api,
+                    node.id,
+                    ui.playhead,
+                    'vector',
+                    { stroke },
+                  )
+                  syncVectorPaintAtCurrentGeometryKeyframe(
+                    api,
+                    node.id,
+                    ui.playhead,
+                    (vector) => applyVectorStroke(vector, stroke),
+                  )
+                }
+              }, UNDOABLE_GESTURE_ORIGIN)
+            }}
+          />
+          </div>
+          <NumberField
+            value={displayedStroke?.width ?? 0}
+            min={0}
+            step={0.5}
+            width="w-16"
+            disabled={!displayedStroke}
+            onCommit={(width) => {
+              if (!displayedStroke) return
+              const stroke = { ...displayedStroke, width }
+              const next = applyVectorStroke(liveVector, stroke)
+              const ui = useUI.getState()
+              api.doc.transact(() => {
+                api.setNodeProperty(node.id, 'vector', next)
+                if (ui.recording) {
+                  recordKeyframesForPatch(api, node.id, ui.playhead, 'vector', {
+                    stroke,
+                  })
+                } else {
+                  stampToActiveTracksForPatch(
+                    api,
+                    node.id,
+                    ui.playhead,
+                    'vector',
+                    { stroke },
+                  )
+                  syncVectorPaintAtCurrentGeometryKeyframe(
+                    api,
+                    node.id,
+                    ui.playhead,
+                    (vector) => applyVectorStroke(vector, stroke),
+                  )
+                }
+              }, UNDOABLE_GESTURE_ORIGIN)
+            }}
+          />
+        </div>
+      </FieldRow>
+      <FieldRow
+        label="Shape"
+        keyframe={
+          editable ? (
+            <KeyframeButton
+              nodeId={node.id}
+              propertyId="vector.geometry"
+              currentValue={node.vector}
+            />
+          ) : null
+        }
+      >
+        <span className="text-[11px] text-text-dim">
+          {editable
+            ? 'Double-click the layer to morph with handles'
+            : 'Import as editable SVG to morph'}
+        </span>
+      </FieldRow>
+      {editable ? (
+        <FieldRow
+          label="Morph to path"
+          keyframe={
+            <KeyframeButton
+              nodeId={node.id}
+              propertyId="vector.geometry"
+              currentValue={liveVector}
+            />
+          }
+        >
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <TextAreaField
+              value={currentPath}
+              rows={4}
+              mono
+              submitOnEnter
+              placeholder="M 0 0 L 100 0 L 50 80 Z"
+              onCommit={(raw) => {
+                try {
+                  const { geometry, fills, strokes } = parseMorphPathInput(raw)
+                  const next = applyMorphTarget(
+                    liveVector,
+                    geometry,
+                    node.viewBox,
+                    fills,
+                    strokes,
+                  )
+                  const ui = useUI.getState()
+                  api.doc.transact(() => {
+                    api.setNodeProperty(node.id, 'vector', next)
+                    if (ui.recording) {
+                      const track = findTrack(
+                        api,
+                        node.id,
+                        'vector.geometry',
+                      )
+                      if (
+                        ui.playhead > 0.01 &&
+                        (!track || track.keyframes.length === 0)
+                      ) {
+                        addKeyframe(
+                          api,
+                          node.id,
+                          'vector.geometry',
+                          0,
+                          liveVector,
+                        )
+                      }
+                      recordKeyframesForPatch(
+                        api,
+                        node.id,
+                        ui.playhead,
+                        'vector',
+                        { geometry: next },
+                      )
+                    } else {
+                      stampToActiveTracksForPatch(
+                        api,
+                        node.id,
+                        ui.playhead,
+                        'vector',
+                        { geometry: next },
+                      )
+                    }
+                  }, UNDOABLE_GESTURE_ORIGIN)
+                  setPathError(null)
+                } catch (error) {
+                  setPathError(
+                    error instanceof MorphPathError
+                      ? error.message
+                      : 'Could not parse the SVG path data.',
+                  )
+                }
+              }}
+            />
+            {pathError ? (
+              <p className="text-[11px] leading-4 text-danger">{pathError}</p>
+            ) : (
+              <p className="text-[11px] leading-4 text-text-dim">
+                Paste path data or a small SVG. Auto Key records a shape
+                morph.
+              </p>
+            )}
+          </div>
+        </FieldRow>
+      ) : null}
+    </Section>
+  )
+}
+
+function LayerBendSection({
+  node,
+  api,
+}: {
+  node: Node
+  api: SceneAPI
+}) {
+  const anim = getAnimEngine().getSnapshot()[node.id]
+  const bend = mergeLayerBend(node.layerBend, {
+    tl: anim?.bendTl,
+    tr: anim?.bendTr,
+    br: anim?.bendBr,
+    bl: anim?.bendBl,
+    top: anim?.bendTop,
+    right: anim?.bendRight,
+    bottom: anim?.bendBottom,
+    left: anim?.bendLeft,
+  })
+  const patchBend = (patch: Partial<LayerBend>) => {
+    const next = mergeLayerBend(node.layerBend, patch)
+    const ui = useUI.getState()
+    api.doc.transact(() => {
+      api.setNodeProperty(node.id, 'layerBend', next)
+      if (ui.recording) {
+        recordKeyframesForPatch(api, node.id, ui.playhead, 'bend', patch)
+      } else {
+        stampToActiveTracksForPatch(api, node.id, ui.playhead, 'bend', patch)
+      }
+    }, UNDOABLE_GESTURE_ORIGIN)
+  }
+  const rows: Array<{ label: string; key: keyof LayerBend; propertyId: 'bend.tl' | 'bend.tr' | 'bend.br' | 'bend.bl' | 'bend.top' | 'bend.right' | 'bend.bottom' | 'bend.left' }> = [
+    { label: 'Top left', key: 'tl', propertyId: 'bend.tl' },
+    { label: 'Top right', key: 'tr', propertyId: 'bend.tr' },
+    { label: 'Bottom right', key: 'br', propertyId: 'bend.br' },
+    { label: 'Bottom left', key: 'bl', propertyId: 'bend.bl' },
+    { label: 'Top', key: 'top', propertyId: 'bend.top' },
+    { label: 'Right', key: 'right', propertyId: 'bend.right' },
+    { label: 'Bottom', key: 'bottom', propertyId: 'bend.bottom' },
+    { label: 'Left', key: 'left', propertyId: 'bend.left' },
+  ]
+  return (
+    <Section title="Layer bend">
+      {rows.map((row) => (
+        <KeyframeSliderRow
+          key={row.key}
+          label={row.label}
+          value={bend[row.key]}
+          onCommit={(value) => patchBend({ [row.key]: value })}
+          min={-400}
+          max={400}
+          step={1}
+          suffix="px"
+          keyframe={
+            <KeyframeButton
+              nodeId={node.id}
+              propertyId={row.propertyId}
+              currentValue={bend[row.key]}
+            />
+          }
+        />
+      ))}
+    </Section>
+  )
+}
+
 function MediaSection({
   node,
   api,
@@ -9574,9 +10033,20 @@ function formatSeconds(seconds: number): string {
 function TextAreaField({
   value,
   onCommit,
+  rows = 3,
+  placeholder,
+  mono = false,
+  submitOnEnter = false,
 }: {
   value: string
   onCommit: (next: string) => void
+  rows?: number
+  placeholder?: string
+  mono?: boolean
+  /** Plain Enter commits and blurs instead of inserting a newline. Use for
+   * single-value fields (e.g. pasted path data) where Enter reads as
+   * "submit," not "new line." Leave off for genuine multi-line content. */
+  submitOnEnter?: boolean
 }) {
   const [draft, setDraft] = useState(value)
   const [focused, setFocused] = useState(false)
@@ -9612,10 +10082,20 @@ function TextAreaField({
           commit()
           skipNextBlurCommitRef.current = true
           ;(e.currentTarget as HTMLTextAreaElement).blur()
+        } else if (submitOnEnter && e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault()
+          commit()
+          skipNextBlurCommitRef.current = true
+          ;(e.currentTarget as HTMLTextAreaElement).blur()
         }
       }}
-      rows={3}
-      className="w-full min-w-0 resize-y rounded border border-transparent bg-transparent px-1.5 py-1 text-[12px] text-text outline-none hover:border-border focus:border-border-strong focus:bg-app-bg"
+      rows={rows}
+      placeholder={placeholder}
+      className={
+        mono
+          ? 'w-full min-w-0 resize-y rounded border border-transparent bg-transparent px-1.5 py-1 font-mono text-[11px] text-text outline-none hover:border-border focus:border-border-strong focus:bg-app-bg'
+          : 'w-full min-w-0 resize-y rounded border border-transparent bg-transparent px-1.5 py-1 text-[12px] text-text outline-none hover:border-border focus:border-border-strong focus:bg-app-bg'
+      }
     />
   )
 }

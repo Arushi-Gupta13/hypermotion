@@ -7,6 +7,7 @@ import type { CameraNode, NodeId, SceneAPI } from '@/scene'
 import {
   buildWorldPlanes,
   createPlaneBuildContext,
+  projectWorldPoint,
   resolveCamera3D,
   type Plane3D,
 } from '@/render3d/scene3d'
@@ -18,6 +19,8 @@ import {
   type ProjectedPoint2D,
 } from '@/render3d/selectionProjection'
 import { ResizeHandles } from '@/ui/ResizeHandles'
+import { VectorEditOverlay } from '@/ui/VectorEditOverlay'
+import { isEditableVectorNode } from '@/scene'
 import {
   recordKeyframesForPatch,
   stampToActiveTracksForPatch,
@@ -155,12 +158,21 @@ export function CameraSelectionOverlay({
   const singleQuad = singlePlane
     ? projectPlaneQuad(singlePlane, resolvedCamera, viewport)
     : null
+  const editingVectorId = useUI((s) => s.editingVectorId)
+  const editingVector =
+    editingVectorId &&
+    singleNode &&
+    singleNode.id === editingVectorId &&
+    isEditableVectorNode(singleNode)
+      ? singleNode
+      : null
   const showHandles =
     !!singleNode &&
     !!singlePlane &&
     !!singleQuad &&
     !singleNode.locked &&
-    'size' in singleNode
+    'size' in singleNode &&
+    !editingVector
   const singleParent = singleNode?.parent
     ? planeBuildContext.nodesById.get(singleNode.parent)
     : null
@@ -172,6 +184,7 @@ export function CameraSelectionOverlay({
     !!singleNode &&
     !!singlePlane &&
     !!singleQuad &&
+    !editingVector &&
     canMoveProjectedSelection({
       isRoot: singleNode.id === rootId,
       locked: singleNode.locked,
@@ -385,6 +398,54 @@ export function CameraSelectionOverlay({
             />
           )
         })}
+        {editingVector && singlePlane ? (
+          <VectorEditOverlay
+            node={editingVector}
+            zoom={zoom}
+            projection={{
+              clientToLocal: (clientX, clientY) => {
+                const point = clientToViewport(clientX, clientY)
+                return point
+                  ? viewportPointToPlaneLocal(
+                      point,
+                      singlePlane,
+                      resolvedCamera,
+                      viewport,
+                    )
+                  : null
+              },
+              localToScreen: (local) => {
+                const world = {
+                  x:
+                    singlePlane.center.x +
+                    singlePlane.right.x *
+                      (local.x - singlePlane.rect.width / 2) *
+                      Math.abs(singlePlane.scaleX) +
+                    singlePlane.down.x *
+                      (local.y - singlePlane.rect.height / 2) *
+                      Math.abs(singlePlane.scaleY),
+                  y:
+                    singlePlane.center.y +
+                    singlePlane.right.y *
+                      (local.x - singlePlane.rect.width / 2) *
+                      Math.abs(singlePlane.scaleX) +
+                    singlePlane.down.y *
+                      (local.y - singlePlane.rect.height / 2) *
+                      Math.abs(singlePlane.scaleY),
+                  z:
+                    singlePlane.center.z +
+                    singlePlane.right.z *
+                      (local.x - singlePlane.rect.width / 2) *
+                      Math.abs(singlePlane.scaleX) +
+                    singlePlane.down.z *
+                      (local.y - singlePlane.rect.height / 2) *
+                      Math.abs(singlePlane.scaleY),
+                }
+                return projectWorldPoint(world, resolvedCamera, viewport)
+              },
+            }}
+          />
+        ) : null}
       </svg>
       {showHandles ? (
         <ResizeHandles

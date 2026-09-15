@@ -495,6 +495,8 @@ camera.vhsColorBleed,
 appearance.opacity, appearance.cornerRadius, appearance.cornerRadii,
 appearance.cornerRadii.tl, appearance.cornerRadii.tr,
 appearance.cornerRadii.br, appearance.cornerRadii.bl, appearance.fill,
+vector.fill, vector.geometry,
+bend.tl, bend.tr, bend.br, bend.bl, bend.top, bend.right, bend.bottom, bend.left,
 text.progress, motionPath.progress, layout.gap, layout.padding.top, layout.padding.right,
 layout.padding.bottom, layout.padding.left, layout.direction,
 size.width, size.height, variant

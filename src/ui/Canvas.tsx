@@ -21,6 +21,7 @@ import {
   useSceneVersion,
   fillToCss,
   clampLayerBlurAmount,
+  isEditableVectorNode,
 } from '@/scene'
 import type {
   CornerRadii,
@@ -38,6 +39,7 @@ import type { SceneAPI } from '@/scene/doc'
 import { useLayout } from '@/ui/hooks/useLayout'
 import { setLastSolvedLayout } from '@/ui/hooks/lastSolvedLayout'
 import { useUI } from '@/state/ui'
+import { vectorEditPreviewStore } from '@/ui/vectorEditPreviewStore'
 import type { Tool } from '@/state/ui'
 import { useProjectAPI } from '@/project'
 import { resolveMasterTime } from '@/sequence'
@@ -85,6 +87,7 @@ import {
   vectorTrimState,
 } from '@/render/vectorPaint'
 import { getPreservedVectorSource } from '@/render/vectorSource'
+import { resolveDisplayedVectorNode } from '@/render/vectorDisplay'
 import {
   flattenSceneInPaintOrder,
   partitionAlwaysOnTopSubtrees,
@@ -653,6 +656,14 @@ export function Canvas() {
   )
   const editingTextId = useUI((s) => s.editingTextId)
   const setEditingTextId = useUI((s) => s.setEditingTextId)
+  const editingVectorId = useUI((s) => s.editingVectorId)
+  const setEditingVectorId = useUI((s) => s.setEditingVectorId)
+  const vectorEditPreview = useSyncExternalStore(
+    vectorEditPreviewStore.subscribe,
+    vectorEditPreviewStore.getSnapshot,
+    vectorEditPreviewStore.getSnapshot,
+  )
+  void vectorEditPreview
   const isEditingText = editingTextId !== null
   const pausedPlayhead = useUI((s) => (s.playing ? null : s.playhead))
   const playhead = playing
@@ -1416,22 +1427,34 @@ export function Canvas() {
 
   const onCanvasDoubleClick = useCallback(
     (e: React.MouseEvent<HTMLElement>) => {
-      if (tool !== 'select' || editingTextId) return
+      if (tool !== 'select' || editingTextId || editingVectorId) return
       const hit = hitTestCanvas3D(e.clientX, e.clientY, true)
       if (!hit) return
       const node = api.getNode(hit.nodeId)
-      if (!node || node.kind !== 'text') return
-      setSelection([node.id])
-      setEditingTextId(node.id)
-      useUI.getState().setPlaying(false)
-      e.preventDefault()
-      e.stopPropagation()
+      if (!node) return
+      if (node.kind === 'text') {
+        setSelection([node.id])
+        setEditingTextId(node.id)
+        useUI.getState().setPlaying(false)
+        e.preventDefault()
+        e.stopPropagation()
+        return
+      }
+      if (isEditableVectorNode(node)) {
+        setSelection([node.id])
+        setEditingVectorId(node.id)
+        useUI.getState().setPlaying(false)
+        e.preventDefault()
+        e.stopPropagation()
+      }
     },
     [
       api,
       editingTextId,
+      editingVectorId,
       hitTestCanvas3D,
       setEditingTextId,
+      setEditingVectorId,
       setSelection,
       tool,
     ],
@@ -1443,7 +1466,10 @@ export function Canvas() {
     if (editingTextId && useUI.getState().playing) {
       useUI.getState().setPlaying(false)
     }
-  }, [editingTextId])
+    if (editingVectorId && useUI.getState().playing) {
+      useUI.getState().setPlaying(false)
+    }
+  }, [editingTextId, editingVectorId])
 
   // Convert a clientX/clientY into canvas-space coordinates.
   //
@@ -2014,6 +2040,14 @@ export function Canvas() {
                 e.stopPropagation()
                 return
               }
+              if (isEditableVectorNode(hitNode)) {
+                setSelection([hitNode.id])
+                setEditingVectorId(hitNode.id)
+                useUI.getState().setPlaying(false)
+                e.preventDefault()
+                e.stopPropagation()
+                return
+              }
             }
             if (e.shiftKey) {
               useUI.getState().toggleInSelection(pointerHit.nodeId, true)
@@ -2142,6 +2176,7 @@ export function Canvas() {
 	      rootId,
 	      setSelection,
 	      setEditingTextId,
+	      setEditingVectorId,
 		      camera,
 		      selection,
 		      spacePanning,
@@ -4510,7 +4545,11 @@ function VisualNodeView({
 }: NodeViewProps) {
   const vectorImageSrc =
     node.kind === 'vector'
-      ? vectorNodeDomImageSource(node, rect.width, rect.height)
+      ? vectorNodeDomImageSource(
+          resolveDisplayedVectorNode(node, anim),
+          rect.width,
+          rect.height,
+        )
       : null
 
   // Node background — serialize whatever Fill shape the model holds

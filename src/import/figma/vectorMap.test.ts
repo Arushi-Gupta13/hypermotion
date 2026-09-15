@@ -329,7 +329,7 @@ describe('Figma vector payload v2', () => {
     expect(mapped).toBeNull()
   })
 
-  it('imports a partial vector through its SVG fidelity fallback', () => {
+  it('imports a mapped vector as an editable vector node', () => {
     const api = createSceneAPI()
     const vector = capturedVector({
       fidelity: 'partial',
@@ -349,9 +349,25 @@ describe('Figma vector payload v2', () => {
     const [createdId] = importFigmaPayload(payload, api, api.getRoot())
     const created = api.getNode(createdId)
 
-    expect(created?.kind).toBe('image')
-    expect(created && 'src' in created ? created.src : '').toContain(
-      'data:image/svg+xml',
+    expect(created?.kind).toBe('vector')
+    expect(created && created.kind === 'vector' ? created.importFidelity : '').toBe(
+      'editable',
     )
+  })
+
+  it('builds native points from SVG path data when Figma paths are missing', () => {
+    const mapped = figmaToVectorDocument(
+      capturedVector({
+        vectorPaths: [],
+        vectorNetwork: undefined,
+        fillGeometry: [],
+        strokeGeometry: [],
+        svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 80"><path d="M0 0 L100 0 L50 80 Z"/></svg>',
+      }),
+      {},
+      3,
+    )
+    expect(mapped?.vector.items[0]?.geometry.contours.length).toBeGreaterThan(0)
+    expect(mapped?.fidelity).toBe('editable')
   })
 })

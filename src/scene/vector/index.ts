@@ -10,6 +10,35 @@ export {
 } from './model'
 export type { CreateVectorItemOptions } from './model'
 export {
+  applyVectorFill,
+  applyVectorStroke,
+  cloneVectorDocument,
+  isEditableVectorNode,
+  lerpVectorDocuments,
+  lerpVectorPaint,
+  lerpVectorStroke,
+  listVectorEditHandles,
+  moveVectorAnchor,
+  moveVectorHandle,
+  primaryVectorFill,
+  primaryVectorFillColor,
+  primaryVectorStroke,
+  vectorDocumentsCompatible,
+  vectorLocalToViewBox,
+  vectorViewBoxToLocal,
+} from './edit'
+export type { VectorEditPart } from './edit'
+export {
+  applyMorphTarget,
+  fitGeometryToViewBox,
+  lerpMorphedVectorDocuments,
+  MorphPathError,
+  parseMorphPathInput,
+  remapVectorGeometry,
+} from './morph'
+export type { MorphPathInput } from './morph'
+export { fillToVectorPaint, vectorPaintToFill } from './paintConvert'
+export {
   VectorPathBuilder,
   parseSvgPathData,
   vectorGeometryToPathData,

@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Local pnpm store — thousands of hashed package files, never commit
+.pnpm-store/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

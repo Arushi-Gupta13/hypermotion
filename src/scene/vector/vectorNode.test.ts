@@ -55,6 +55,8 @@ describe('VectorNode persistence', () => {
     if (!reopened || reopened.kind !== 'vector') throw new Error('Expected reopened vector')
     expect(reopened.vector).toEqual(vector)
     expect(reopened.source?.payloadVersion).toBe(2)
+    api.setNodeProperty(id, 'layerBend', { tl: 12, tr: 0, br: 0, bl: 0, top: 4, right: 0, bottom: 0, left: 0 })
+    expect(api.getNode(id)?.layerBend?.tl).toBe(12)
   })
 
   it('normalizes vector defaults when older documents omit them', () => {

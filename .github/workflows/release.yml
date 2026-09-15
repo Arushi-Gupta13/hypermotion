@@ -19,10 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Windows is paused for the v0.1.x research-preview series — the
-        # build worked but we aren't advertising it yet. Add `windows-latest`
-        # back here when we're ready to ship Windows binaries.
-        os: [macos-latest]
+        os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -119,8 +116,11 @@ jobs:
           name: macos-build
           path: dist-release/
 
-      # Windows artifact download is paused for the v0.1.x series — see
-      # the build matrix above. Re-add when Windows builds resume.
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-build
+          path: dist-release/
 
       - name: List downloaded files
         run: ls -la dist-release/
@@ -131,8 +131,10 @@ jobs:
           files: |
             dist-release/*.dmg
             dist-release/*.blockmap
+            dist-release/*.exe
             dist-release/hyper-motion-figma-plugin-v*.zip
             dist-release/latest-mac.yml
+            dist-release/latest.yml
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
@@ -166,4 +168,11 @@ jobs:
 
             ---
 
-            Windows build is not shipping yet — coming in a later v0.1.x release.
+            ## Install on Windows
+
+            Download `hyper-motion Setup *.exe` from this release and run the NSIS
+            installer. The research-preview build is unsigned, so SmartScreen may
+            warn on first open — choose **More info** then **Run anyway**.
+
+            Pick the x64 installer on Intel/AMD PCs, or the arm64 installer on
+            Snapdragon / Windows on Arm.

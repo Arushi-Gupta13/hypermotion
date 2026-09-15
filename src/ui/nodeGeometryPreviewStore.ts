@@ -1,11 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { Node, NodeId, SceneAPI, Size, TextNode } from '@/scene'
+import type { Node, NodeId, SceneAPI, Size, TextNode, Transform } from '@/scene'
 import { UNDOABLE_GESTURE_ORIGIN } from '@/scene/undo'
 
 /** Layout and text metrics that can be painted without mutating the scene. */
 export interface NodeGeometryPreview {
   size?: Partial<Size>
+  /**
+   * Position-only preview (x/y). Added so a resize gesture on one node can
+   * also live-preview OTHER nodes it displaces — e.g. a device mockup's
+   * absolute-positioned children, which have no size/percentage relationship
+   * to their parent and must be explicitly rescaled to follow it.
+   */
+  transform?: Partial<Pick<Transform, 'x' | 'y'>>
   fontSize?: number
   lineHeight?: number
   letterSpacing?: number
@@ -134,6 +141,12 @@ export function applyNodeGeometryPreview(
       ...result,
       size: { ...result.size, ...preview.size },
     } as Node
+  }
+  if (preview.transform) {
+    result = {
+      ...result,
+      transform: { ...result.transform, ...preview.transform },
+    }
   }
 
   if (result.kind === 'text') {

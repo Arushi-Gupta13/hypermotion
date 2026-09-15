@@ -20,8 +20,8 @@ import type {
  *   3. Anim engine will pick it up automatically
  */
 
-export type PropertyGroup = 'transform' | 'deformation' | 'camera' | 'appearance' | 'shape' | 'text' | 'layout' | 'size' | 'semantic'
-export type Interpolation = 'numeric' | 'discrete' | 'color' | 'angle'
+export type PropertyGroup = 'transform' | 'deformation' | 'camera' | 'appearance' | 'shape' | 'text' | 'layout' | 'size' | 'semantic' | 'vector' | 'bend'
+export type Interpolation = 'numeric' | 'discrete' | 'color' | 'angle' | 'path' | 'paint' | 'stroke'
 
 export interface PropertyDescriptor {
   id: PropertyId
@@ -325,6 +325,63 @@ export const PROPERTIES: Record<StaticPropertyId, PropertyDescriptor> = {
   'appearance.fill': {
     id: 'appearance.fill', group: 'appearance', label: 'Fill',
     layoutAffecting: false, interpolation: 'color', defaultValue: 'oklch(0.8 0.05 250)',
+  },
+  'vector.fill': {
+    id: 'vector.fill', group: 'vector', label: 'Vector Fill',
+    layoutAffecting: false, interpolation: 'paint',
+    defaultValue: {
+      id: 'fill-1', kind: 'solid', color: '#000000',
+      visible: true, opacity: 1, blendMode: 'normal',
+    },
+  },
+  'vector.stroke': {
+    id: 'vector.stroke', group: 'vector', label: 'Vector Stroke',
+    layoutAffecting: false, interpolation: 'stroke',
+    defaultValue: {
+      id: 'stroke-1',
+      paint: {
+        id: 'stroke-paint-1', kind: 'solid', color: '#000000',
+        visible: true, opacity: 1, blendMode: 'normal',
+      },
+      width: 1, align: 'center', cap: 'butt', join: 'miter',
+      miterLimit: 4, dash: [], dashOffset: 0, opacity: 1, visible: true,
+    },
+  },
+  'vector.geometry': {
+    id: 'vector.geometry', group: 'vector', label: 'Shape',
+    layoutAffecting: false, interpolation: 'path', defaultValue: { version: 1, items: [] },
+  },
+  'bend.tl': {
+    id: 'bend.tl', group: 'bend', label: 'Bend TL',
+    layoutAffecting: false, interpolation: 'numeric', defaultValue: 0,
+  },
+  'bend.tr': {
+    id: 'bend.tr', group: 'bend', label: 'Bend TR',
+    layoutAffecting: false, interpolation: 'numeric', defaultValue: 0,
+  },
+  'bend.br': {
+    id: 'bend.br', group: 'bend', label: 'Bend BR',
+    layoutAffecting: false, interpolation: 'numeric', defaultValue: 0,
+  },
+  'bend.bl': {
+    id: 'bend.bl', group: 'bend', label: 'Bend BL',
+    layoutAffecting: false, interpolation: 'numeric', defaultValue: 0,
+  },
+  'bend.top': {
+    id: 'bend.top', group: 'bend', label: 'Bend Top',
+    layoutAffecting: false, interpolation: 'numeric', defaultValue: 0,
+  },
+  'bend.right': {
+    id: 'bend.right', group: 'bend', label: 'Bend Right',
+    layoutAffecting: false, interpolation: 'numeric', defaultValue: 0,
+  },
+  'bend.bottom': {
+    id: 'bend.bottom', group: 'bend', label: 'Bend Bottom',
+    layoutAffecting: false, interpolation: 'numeric', defaultValue: 0,
+  },
+  'bend.left': {
+    id: 'bend.left', group: 'bend', label: 'Bend Left',
+    layoutAffecting: false, interpolation: 'numeric', defaultValue: 0,
   },
   'appearance.blendMode': {
     id: 'appearance.blendMode', group: 'appearance', label: 'Blend Mode',

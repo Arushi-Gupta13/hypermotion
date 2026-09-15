@@ -7,6 +7,9 @@ import type {
   NodeId,
   SceneAPI,
   VariantSelection,
+  VectorDocument,
+  VectorPaint,
+  VectorStroke,
 } from '@/scene'
 import { getAnimEngine } from '@/anim'
 import type { TextAnimationConfig } from '@/anim'
@@ -118,6 +121,17 @@ export interface AnimatedValue {
   vhsNoise?: number
   vhsScanlines?: number
   vhsColorBleed?: number
+  vectorFill?: VectorPaint
+  vectorStroke?: VectorStroke
+  vectorGeometry?: VectorDocument
+  bendTl?: number
+  bendTr?: number
+  bendBr?: number
+  bendBl?: number
+  bendTop?: number
+  bendRight?: number
+  bendBottom?: number
+  bendLeft?: number
 }
 
 const EMPTY_ANIMATED_VALUES = Object.freeze({}) as Record<

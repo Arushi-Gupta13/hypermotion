@@ -141,6 +141,23 @@ const CAMERA_PROP_IDS: Partial<Record<string, PropertyId>> = {
   vhsColorBleed: 'camera.vhsColorBleed',
 }
 
+const VECTOR_PROP_IDS: Partial<Record<string, PropertyId>> = {
+  fill: 'vector.fill',
+  stroke: 'vector.stroke',
+  geometry: 'vector.geometry',
+}
+
+const BEND_PROP_IDS: Partial<Record<string, PropertyId>> = {
+  tl: 'bend.tl',
+  tr: 'bend.tr',
+  br: 'bend.br',
+  bl: 'bend.bl',
+  top: 'bend.top',
+  right: 'bend.right',
+  bottom: 'bend.bottom',
+  left: 'bend.left',
+}
+
 export type PatchGroup =
   | 'transform'
   | 'appearance'
@@ -150,6 +167,8 @@ export type PatchGroup =
   | 'motionPath'
   | 'deformation'
   | 'layout'
+  | 'vector'
+  | 'bend'
 
 export interface PatchKeyframeValue {
   propertyId: PropertyId
@@ -212,15 +231,31 @@ export function keyframeValuesForPatch(
   return values
 }
 
+const VECTOR_PAINT_KINDS = new Set(['solid', 'linear', 'radial', 'conic', 'image'])
+
 /**
- * Fill edits arrive from the Inspector as a complete Fill object, while the
- * animation track stores the solid color string that the engine interpolates.
- * Gradient and image fills remain editable but do not create a color track.
+ * `appearance.fill` (frame/rect layers) arrives from the Inspector as a
+ * complete Fill object, while its track stores only the solid color string
+ * the engine interpolates — gradient and image fills stay editable but
+ * don't create a color track there.
+ *
+ * `vector.fill` is richer: its track stores the whole VectorPaint (solid or
+ * gradient), which the engine interpolates directly (see `paint`
+ * interpolation in props.ts), so it passes through whole rather than being
+ * flattened to a color string.
  */
 function keyframeValueForPatch(
   propertyId: PropertyId,
   value: unknown,
 ): KeyframeValue | null | undefined {
+  if (propertyId === 'vector.fill') {
+    return value &&
+      typeof value === 'object' &&
+      'kind' in value &&
+      VECTOR_PAINT_KINDS.has(value.kind as string)
+      ? (value as KeyframeValue)
+      : null
+  }
   if (propertyId !== 'appearance.fill') {
     return value as KeyframeValue | null | undefined
   }
@@ -308,5 +343,9 @@ function propertyMapForGroup(
           ? DEFORMATION_PROP_IDS
         : group === 'layout'
           ? LAYOUT_PROP_IDS
-          : CAMERA_PROP_IDS
+          : group === 'vector'
+            ? VECTOR_PROP_IDS
+            : group === 'bend'
+              ? BEND_PROP_IDS
+              : CAMERA_PROP_IDS
 }
