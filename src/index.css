@@ -958,6 +958,98 @@ body[data-preview-mode='1'] [data-canvas-root] {
 .hm-preset-scale-out { animation-name: hm-scale-out; }
 
 /* ============================================================
+   Showcase preset previews
+   ============================================================ */
+
+@keyframes hm-tilt-in-3d {
+  0%, 10%   { opacity: 0; transform: perspective(200px) rotateY(-60deg) rotateX(15deg) translateZ(-30px); }
+  55%, 88%  { opacity: 1; transform: perspective(200px) rotateY(0deg) rotateX(0deg) translateZ(0); }
+  100%      { opacity: 0; transform: perspective(200px) rotateY(-60deg) rotateX(15deg) translateZ(-30px); }
+}
+.hm-preset-tilt-in-3d { animation-name: hm-tilt-in-3d; }
+
+@keyframes hm-tilt-out-3d {
+  0%, 10%   { opacity: 1; transform: perspective(200px) rotateY(0deg) rotateX(0deg) translateZ(0); }
+  55%, 88%  { opacity: 0; transform: perspective(200px) rotateY(60deg) rotateX(-15deg) translateZ(-30px); }
+  100%      { opacity: 1; transform: perspective(200px) rotateY(0deg) rotateX(0deg) translateZ(0); }
+}
+.hm-preset-tilt-out-3d {
+  animation-name: hm-tilt-out-3d;
+  animation-timing-function: cubic-bezier(0.7, 0, 0.84, 0);
+}
+
+@keyframes hm-spin-in {
+  0%, 10%   { opacity: 0; transform: rotate(-170deg) scale(0.5); }
+  55%, 88%  { opacity: 1; transform: rotate(0deg) scale(1); }
+  100%      { opacity: 0; transform: rotate(-170deg) scale(0.5); }
+}
+.hm-preset-spin-in { animation-name: hm-spin-in; }
+
+@keyframes hm-spin-out {
+  0%, 10%   { opacity: 1; transform: rotate(0deg) scale(1); }
+  55%, 88%  { opacity: 0; transform: rotate(170deg) scale(0.5); }
+  100%      { opacity: 1; transform: rotate(0deg) scale(1); }
+}
+.hm-preset-spin-out {
+  animation-name: hm-spin-out;
+  animation-timing-function: cubic-bezier(0.7, 0, 0.84, 0);
+}
+
+@keyframes hm-focus-in {
+  0%, 10%   { opacity: 0; transform: scale(1.6); }
+  55%, 88%  { opacity: 1; transform: scale(1); }
+  100%      { opacity: 0; transform: scale(1.6); }
+}
+.hm-preset-focus-in { animation-name: hm-focus-in; }
+
+@keyframes hm-focus-out {
+  0%, 10%   { opacity: 1; transform: scale(1); }
+  55%, 88%  { opacity: 0; transform: scale(1.6); }
+  100%      { opacity: 1; transform: scale(1); }
+}
+.hm-preset-focus-out {
+  animation-name: hm-focus-out;
+  animation-timing-function: cubic-bezier(0.7, 0, 0.84, 0);
+}
+
+@keyframes hm-scatter-in {
+  0%, 10%   { opacity: 0; transform: translate(10px, -8px) rotate(18deg) scale(0.5); }
+  55%, 88%  { opacity: 1; transform: translate(0, 0) rotate(0deg) scale(1); }
+  100%      { opacity: 0; transform: translate(10px, -8px) rotate(18deg) scale(0.5); }
+}
+.hm-preset-scatter-in {
+  animation-name: hm-scatter-in;
+  animation-timing-function: cubic-bezier(0.34, 1.2, 0.64, 1);
+}
+
+@keyframes hm-scatter-out {
+  0%, 10%   { opacity: 1; transform: translate(0, 0) rotate(0deg) scale(1); }
+  55%, 88%  { opacity: 0; transform: translate(-10px, 8px) rotate(-18deg) scale(0.5); }
+  100%      { opacity: 1; transform: translate(0, 0) rotate(0deg) scale(1); }
+}
+.hm-preset-scatter-out {
+  animation-name: hm-scatter-out;
+  animation-timing-function: cubic-bezier(0.7, 0, 0.84, 0);
+}
+
+@keyframes hm-isometric-in {
+  0%, 10%   { opacity: 0; transform: perspective(200px) rotateX(0deg) rotateY(0deg) scale(0.7); }
+  55%, 88%  { opacity: 1; transform: perspective(200px) rotateX(28deg) rotateY(35deg) scale(1); }
+  100%      { opacity: 0; transform: perspective(200px) rotateX(0deg) rotateY(0deg) scale(0.7); }
+}
+.hm-preset-isometric-in { animation-name: hm-isometric-in; }
+
+@keyframes hm-isometric-out {
+  0%, 10%   { opacity: 1; transform: perspective(200px) rotateX(28deg) rotateY(35deg) scale(1); }
+  55%, 88%  { opacity: 0; transform: perspective(200px) rotateX(0deg) rotateY(0deg) scale(0.7); }
+  100%      { opacity: 1; transform: perspective(200px) rotateX(28deg) rotateY(35deg) scale(1); }
+}
+.hm-preset-isometric-out {
+  animation-name: hm-isometric-out;
+  animation-timing-function: cubic-bezier(0.7, 0, 0.84, 0);
+}
+
+/* ============================================================
    Text animation preset previews
    ============================================================ */
 

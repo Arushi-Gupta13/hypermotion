@@ -39,6 +39,21 @@ export type AnimPresetId =
   | 'scale-in'
   | 'scale-out'
   | 'pop'
+  // Showcase-style presets covering 3D & Perspective, Orbit, Spotlight &
+  // Focus, Stack & Scatter, and Isometric looks. Each still targets plain
+  // transform + opacity keyframes — no new node fields or renderer work —
+  // so they drop into the same apply/clear/stagger machinery as the
+  // presets above.
+  | 'tilt-in-3d'
+  | 'tilt-out-3d'
+  | 'spin-in'
+  | 'spin-out'
+  | 'focus-in'
+  | 'focus-out'
+  | 'scatter-in'
+  | 'scatter-out'
+  | 'isometric-in'
+  | 'isometric-out'
 
 export interface AnimPreset {
   id: AnimPresetId
@@ -166,7 +181,26 @@ export const PRESETS: AnimPreset[] = [
   { id: 'scale-in', label: 'Scale In', direction: 'in', duration: 0.4, easing: 'ease-out' },
   { id: 'scale-out', label: 'Scale Out', direction: 'out', duration: 0.4, easing: 'ease-in' },
   { id: 'pop', label: 'Pop', direction: 'in', duration: 0.5, easing: { bezier: [0.34, 1.56, 0.64, 1] } },
+  { id: 'tilt-in-3d', label: 'Tilt In 3D', direction: 'in', duration: 0.6, easing: 'ease-out' },
+  { id: 'tilt-out-3d', label: 'Tilt Out 3D', direction: 'out', duration: 0.6, easing: 'ease-in' },
+  { id: 'spin-in', label: 'Spin In', direction: 'in', duration: 0.6, easing: 'ease-out' },
+  { id: 'spin-out', label: 'Spin Out', direction: 'out', duration: 0.6, easing: 'ease-in' },
+  { id: 'focus-in', label: 'Focus In', direction: 'in', duration: 0.5, easing: 'ease-out' },
+  { id: 'focus-out', label: 'Focus Out', direction: 'out', duration: 0.5, easing: 'ease-in' },
+  { id: 'scatter-in', label: 'Scatter In', direction: 'in', duration: 0.55, easing: { bezier: [0.34, 1.2, 0.64, 1] } },
+  { id: 'scatter-out', label: 'Scatter Out', direction: 'out', duration: 0.55, easing: 'ease-in' },
+  { id: 'isometric-in', label: 'Isometric In', direction: 'in', duration: 0.6, easing: 'ease-out' },
+  { id: 'isometric-out', label: 'Isometric Out', direction: 'out', duration: 0.6, easing: 'ease-in' },
 ]
+
+/** Deterministic small hash so "Scatter" spreads each layer differently but repeatably. */
+function hashNodeId(id: string): number {
+  let h = 0
+  for (let i = 0; i < id.length; i++) {
+    h = (h * 31 + id.charCodeAt(i)) | 0
+  }
+  return h
+}
 
 /**
  * Apply a preset to a node at a given start time.
@@ -201,6 +235,10 @@ export function applyPreset(
   if (!node) return
   const baseX = node.transform.x
   const baseY = node.transform.y
+  const baseZ = node.transform.z
+  const baseRotation = node.transform.rotation
+  const baseRotX = node.transform.rotationX
+  const baseRotY = node.transform.rotationY
   const baseSX = node.transform.scaleX
   const baseSY = node.transform.scaleY
   const baseOp = node.appearance.opacity
@@ -297,5 +335,148 @@ export function applyPreset(
       kf('transform.scaleY', startTime, baseSY * 0.6, p.easing)
       kf('transform.scaleY', end, baseSY)
       break
+
+    // --- 3D & Perspective ---------------------------------------------
+    case 'tilt-in-3d':
+      kf('appearance.opacity', startTime, 0, p.easing)
+      kf('appearance.opacity', end, baseOp)
+      kf('transform.rotationY', startTime, baseRotY - 60, p.easing)
+      kf('transform.rotationY', end, baseRotY)
+      kf('transform.rotationX', startTime, baseRotX + 15, p.easing)
+      kf('transform.rotationX', end, baseRotX)
+      kf('transform.z', startTime, baseZ - 140, p.easing)
+      kf('transform.z', end, baseZ)
+      break
+    case 'tilt-out-3d':
+      kf('appearance.opacity', startTime, baseOp, p.easing)
+      kf('appearance.opacity', end, 0)
+      kf('transform.rotationY', startTime, baseRotY, p.easing)
+      kf('transform.rotationY', end, baseRotY + 60)
+      kf('transform.rotationX', startTime, baseRotX, p.easing)
+      kf('transform.rotationX', end, baseRotX - 15)
+      kf('transform.z', startTime, baseZ, p.easing)
+      kf('transform.z', end, baseZ - 140)
+      break
+
+    // --- Orbit -----------------------------------------------------------
+    case 'spin-in':
+      kf('appearance.opacity', startTime, 0, p.easing)
+      kf('appearance.opacity', end, baseOp)
+      kf('transform.rotation', startTime, baseRotation - 170, p.easing)
+      kf('transform.rotation', end, baseRotation)
+      kf('transform.scaleX', startTime, baseSX * 0.5, p.easing)
+      kf('transform.scaleX', end, baseSX)
+      kf('transform.scaleY', startTime, baseSY * 0.5, p.easing)
+      kf('transform.scaleY', end, baseSY)
+      break
+    case 'spin-out':
+      kf('appearance.opacity', startTime, baseOp, p.easing)
+      kf('appearance.opacity', end, 0)
+      kf('transform.rotation', startTime, baseRotation, p.easing)
+      kf('transform.rotation', end, baseRotation + 170)
+      kf('transform.scaleX', startTime, baseSX, p.easing)
+      kf('transform.scaleX', end, baseSX * 0.5)
+      kf('transform.scaleY', startTime, baseSY, p.easing)
+      kf('transform.scaleY', end, baseSY * 0.5)
+      break
+
+    // --- Spotlight & Focus -------------------------------------------
+    case 'focus-in':
+      kf('appearance.opacity', startTime, 0, p.easing)
+      kf('appearance.opacity', end, baseOp)
+      kf('transform.scaleX', startTime, baseSX * 1.5, p.easing)
+      kf('transform.scaleX', end, baseSX)
+      kf('transform.scaleY', startTime, baseSY * 1.5, p.easing)
+      kf('transform.scaleY', end, baseSY)
+      kf('transform.z', startTime, baseZ - 60, p.easing)
+      kf('transform.z', end, baseZ)
+      break
+    case 'focus-out':
+      kf('appearance.opacity', startTime, baseOp, p.easing)
+      kf('appearance.opacity', end, 0)
+      kf('transform.scaleX', startTime, baseSX, p.easing)
+      kf('transform.scaleX', end, baseSX * 1.5)
+      kf('transform.scaleY', startTime, baseSY, p.easing)
+      kf('transform.scaleY', end, baseSY * 1.5)
+      kf('transform.z', startTime, baseZ, p.easing)
+      kf('transform.z', end, baseZ - 60)
+      break
+
+    // --- Stack & Scatter -------------------------------------------------
+    // Each layer scatters to a different, but repeatable, nearby offset —
+    // reads best applied across a multi-selection with Stagger on.
+    case 'scatter-in':
+    case 'scatter-out': {
+      const hash = hashNodeId(nodeId)
+      const offsetX = (hash % 200) - 100
+      const offsetY = ((hash >> 8) % 160) - 80
+      const offsetRot = ((hash >> 16) % 60) - 30
+      const scatteredX = baseX + offsetX
+      const scatteredY = baseY + offsetY
+      const scatteredRot = baseRotation + offsetRot
+      if (preset === 'scatter-in') {
+        kf('appearance.opacity', startTime, 0, p.easing)
+        kf('appearance.opacity', end, baseOp)
+        kf('transform.x', startTime, scatteredX, p.easing)
+        kf('transform.x', end, baseX)
+        kf('transform.y', startTime, scatteredY, p.easing)
+        kf('transform.y', end, baseY)
+        kf('transform.rotation', startTime, scatteredRot, p.easing)
+        kf('transform.rotation', end, baseRotation)
+        kf('transform.scaleX', startTime, baseSX * 0.5, p.easing)
+        kf('transform.scaleX', end, baseSX)
+        kf('transform.scaleY', startTime, baseSY * 0.5, p.easing)
+        kf('transform.scaleY', end, baseSY)
+      } else {
+        kf('appearance.opacity', startTime, baseOp, p.easing)
+        kf('appearance.opacity', end, 0)
+        kf('transform.x', startTime, baseX, p.easing)
+        kf('transform.x', end, scatteredX)
+        kf('transform.y', startTime, baseY, p.easing)
+        kf('transform.y', end, scatteredY)
+        kf('transform.rotation', startTime, baseRotation, p.easing)
+        kf('transform.rotation', end, scatteredRot)
+        kf('transform.scaleX', startTime, baseSX, p.easing)
+        kf('transform.scaleX', end, baseSX * 0.5)
+        kf('transform.scaleY', startTime, baseSY, p.easing)
+        kf('transform.scaleY', end, baseSY * 0.5)
+      }
+      break
+    }
+
+    // --- Isometric ---------------------------------------------------
+    // Unlike the presets above, the "landed" pose is a deliberate tilt,
+    // not the node's original rotation — this is a showcase "look" the
+    // layer settles into, not a return to its authored pose.
+    case 'isometric-in': {
+      const ISO_X = 35
+      const ISO_Y = 45
+      kf('appearance.opacity', startTime, 0, p.easing)
+      kf('appearance.opacity', end, baseOp)
+      kf('transform.rotationX', startTime, 0, p.easing)
+      kf('transform.rotationX', end, ISO_X)
+      kf('transform.rotationY', startTime, 0, p.easing)
+      kf('transform.rotationY', end, ISO_Y)
+      kf('transform.scaleX', startTime, baseSX * 0.7, p.easing)
+      kf('transform.scaleX', end, baseSX)
+      kf('transform.scaleY', startTime, baseSY * 0.7, p.easing)
+      kf('transform.scaleY', end, baseSY)
+      break
+    }
+    case 'isometric-out': {
+      const ISO_X = 35
+      const ISO_Y = 45
+      kf('appearance.opacity', startTime, baseOp, p.easing)
+      kf('appearance.opacity', end, 0)
+      kf('transform.rotationX', startTime, ISO_X, p.easing)
+      kf('transform.rotationX', end, 0)
+      kf('transform.rotationY', startTime, ISO_Y, p.easing)
+      kf('transform.rotationY', end, 0)
+      kf('transform.scaleX', startTime, baseSX, p.easing)
+      kf('transform.scaleX', end, baseSX * 0.7)
+      kf('transform.scaleY', startTime, baseSY, p.easing)
+      kf('transform.scaleY', end, baseSY * 0.7)
+      break
+    }
   }
 }

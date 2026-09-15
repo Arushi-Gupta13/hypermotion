@@ -117,6 +117,12 @@ import {
 } from '@/ui/nodeLayoutPreviewStore'
 import { nodeTransformPreviewStore } from '@/ui/nodeTransformPreviewStore'
 import {
+  applyGridDistribution,
+  defaultGridDistributionParams,
+  type GridDistributionKind,
+  type GridDistributionParams,
+} from '@/scene/gridDistribution'
+import {
   resetCameraTransformGroup,
   type CameraTransformResetGroup,
 } from '@/ui/cameraReset'
@@ -839,6 +845,7 @@ function SceneDetails({ api, project }: { api: SceneAPI; project: ProjectAPI }) 
             <FillField
               value={liveRootFill}
               onCommit={commitRootFill}
+              nodeId={root.id}
               keyframe={
                 <KeyframeButton
                   nodeId={root.id}
@@ -854,6 +861,7 @@ function SceneDetails({ api, project }: { api: SceneAPI; project: ProjectAPI }) 
             <div aria-hidden="true" className="border-t border-border" />
             <StrokeControls
               value={root.appearance.stroke}
+              nodeId={root.id}
               onCommit={(stroke) =>
                 api.setNodeProperty(root.id, 'appearance', {
                   ...root.appearance,
@@ -1045,6 +1053,19 @@ function MultiNodeDetails({ nodes, api }: { nodes: Node[]; api: SceneAPI }) {
     (n) => n.id !== api.getRoot() && n.kind !== 'camera' && n.kind !== 'audio',
   )
   const renderModeNodes = renderModeEligibleNodes(nodes)
+
+  // Arrange — one-shot distribute action (Radial / Path / Spherical).
+  // Params persist across selection changes so re-selecting a group
+  // keeps the last-used layout dialed in.
+  const [arrangeKind, setArrangeKind] = useState<GridDistributionKind>('radial')
+  const [arrangeParams, setArrangeParams] = useState<GridDistributionParams>(
+    defaultGridDistributionParams('radial'),
+  )
+  const nodeIds = nodes.map((n) => n.id)
+  const applyArrange = (next: GridDistributionParams) => {
+    setArrangeParams(next)
+    applyGridDistribution(api, nodeIds, next)
+  }
 
   // Per-group patchers. Each writes to every selected node that has
   // that group, preserving the node's other fields in the same group.
@@ -1280,6 +1301,140 @@ function MultiNodeDetails({ nodes, api }: { nodes: Node[]; api: SceneAPI }) {
           selected layers to the same stagger set.
         </div>
       </div>
+
+      {count >= 2 ? (
+        <Section title="Arrange">
+          <FieldRow label="Layout">
+            <SelectField<GridDistributionKind>
+              value={arrangeKind}
+              options={[
+                { value: 'radial', label: 'Radial' },
+                { value: 'path', label: 'Path' },
+                { value: 'spherical', label: 'Spherical' },
+              ]}
+              onCommit={(kind) => {
+                setArrangeKind(kind)
+                applyArrange(defaultGridDistributionParams(kind))
+              }}
+            />
+          </FieldRow>
+          {arrangeParams.kind === 'radial' ? (
+            <>
+              <FieldRow label="Radius">
+                <NumberField
+                  value={arrangeParams.radius}
+                  min={0}
+                  step={1}
+                  ariaLabel="Radius"
+                  onCommit={(radius) => applyArrange({ ...arrangeParams, radius })}
+                />
+              </FieldRow>
+              <FieldRow label="Start angle">
+                <NumberField
+                  value={arrangeParams.startAngle}
+                  step={1}
+                  suffix="°"
+                  ariaLabel="Start angle"
+                  onCommit={(startAngle) => applyArrange({ ...arrangeParams, startAngle })}
+                />
+              </FieldRow>
+              <FieldRow label="Sweep">
+                <NumberField
+                  value={arrangeParams.sweep}
+                  min={0}
+                  max={360}
+                  step={1}
+                  suffix="°"
+                  ariaLabel="Sweep"
+                  onCommit={(sweep) => applyArrange({ ...arrangeParams, sweep })}
+                />
+              </FieldRow>
+              <FieldRow label="Face outward">
+                <CheckboxField
+                  value={arrangeParams.faceOutward}
+                  onCommit={(faceOutward) => applyArrange({ ...arrangeParams, faceOutward })}
+                />
+              </FieldRow>
+            </>
+          ) : null}
+          {arrangeParams.kind === 'path' ? (
+            <>
+              <FieldRow label="From">
+                <div className="flex min-w-0 flex-1 gap-1.5">
+                  <NumberField
+                    value={arrangeParams.from.x}
+                    step={1}
+                    ariaLabel="From X"
+                    onCommit={(x) =>
+                      applyArrange({ ...arrangeParams, from: { ...arrangeParams.from, x } })
+                    }
+                  />
+                  <NumberField
+                    value={arrangeParams.from.y}
+                    step={1}
+                    ariaLabel="From Y"
+                    onCommit={(y) =>
+                      applyArrange({ ...arrangeParams, from: { ...arrangeParams.from, y } })
+                    }
+                  />
+                </div>
+              </FieldRow>
+              <FieldRow label="To">
+                <div className="flex min-w-0 flex-1 gap-1.5">
+                  <NumberField
+                    value={arrangeParams.to.x}
+                    step={1}
+                    ariaLabel="To X"
+                    onCommit={(x) =>
+                      applyArrange({ ...arrangeParams, to: { ...arrangeParams.to, x } })
+                    }
+                  />
+                  <NumberField
+                    value={arrangeParams.to.y}
+                    step={1}
+                    ariaLabel="To Y"
+                    onCommit={(y) =>
+                      applyArrange({ ...arrangeParams, to: { ...arrangeParams.to, y } })
+                    }
+                  />
+                </div>
+              </FieldRow>
+              <FieldRow label="Curve">
+                <NumberField
+                  value={arrangeParams.curve}
+                  step={1}
+                  ariaLabel="Curve"
+                  onCommit={(curve) => applyArrange({ ...arrangeParams, curve })}
+                />
+              </FieldRow>
+              <FieldRow label="Follow tangent">
+                <CheckboxField
+                  value={arrangeParams.followTangent}
+                  onCommit={(followTangent) =>
+                    applyArrange({ ...arrangeParams, followTangent })
+                  }
+                />
+              </FieldRow>
+            </>
+          ) : null}
+          {arrangeParams.kind === 'spherical' ? (
+            <FieldRow label="Radius">
+              <NumberField
+                value={arrangeParams.radius}
+                min={0}
+                step={1}
+                ariaLabel="Radius"
+                onCommit={(radius) => applyArrange({ ...arrangeParams, radius })}
+              />
+            </FieldRow>
+          ) : null}
+          <p className="text-[10px] leading-4 text-text-dim">
+            Arranges the {count} selected layers around their shared center.
+            Re-run any time — it always recomputes from their current
+            center, not the last arrange.
+          </p>
+        </Section>
+      ) : null}
 
       <Section title="Node">
         <FieldRow label="Visible">
@@ -5111,6 +5266,7 @@ function NodeDetails({ node, api }: { node: Node; api: SceneAPI }) {
           <FillField
             value={liveFill}
             onCommit={(fill) => patchAppearance({ fill })}
+            nodeId={node.id}
             keyframe={
               <KeyframeButton
                 nodeId={node.id}
@@ -5124,6 +5280,7 @@ function NodeDetails({ node, api }: { node: Node; api: SceneAPI }) {
           <div aria-hidden="true" className="border-t border-border" />
           <StrokeControls
             value={node.appearance.stroke}
+            nodeId={node.id}
             onCommit={(stroke) => patchAppearance({ stroke })}
           />
           {node.kind !== 'ellipse' ? (node.appearance.cornerRadii ? (
@@ -8892,6 +9049,7 @@ function VectorSection({
       >
         <FillField
           value={displayedFill ? vectorPaintToFill(displayedFill) : null}
+          nodeId={node.id}
           onCommit={(fill) => {
             if (!fill) return
             const paint = fillToVectorPaint(fill)
@@ -8939,6 +9097,7 @@ function VectorSection({
           <FillField
             label=""
             value={displayedStroke ? vectorPaintToFill(displayedStroke.paint) : null}
+            nodeId={node.id}
             onCommit={(fill) => {
               const ui = useUI.getState()
               api.doc.transact(() => {
@@ -10846,9 +11005,11 @@ function normalizeStroke(s: Stroke): Stroke {
 function StrokeControls({
   value,
   onCommit,
+  nodeId,
 }: {
   value: Stroke | null
   onCommit: (next: Stroke | null) => void
+  nodeId?: string
 }) {
   // Every path below that reads `value` shape needs the normalized form so
   // Style / Dash Length / Gap read the right defaults on old docs that
@@ -10871,6 +11032,7 @@ function StrokeControls({
         <FillField
           label=""
           value={currentStrokeFill}
+          nodeId={nodeId}
           onCommit={(fill) => {
             if (fill === null) {
               onCommit(null)

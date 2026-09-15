@@ -13,6 +13,11 @@ import {
 import { createPortal } from 'react-dom'
 import type { Fill, GradientStop } from '@/scene'
 import { defaultFill, fillToCss, imageBackgroundStyle } from '@/scene'
+import {
+  gradientEditStore,
+  isGradientFillKind,
+  type GradientFill,
+} from '@/ui/gradientEditStore'
 import { FieldRow } from './FieldRow'
 import { NumberField } from './NumberField'
 import { SelectField } from './SelectField'
@@ -58,6 +63,7 @@ export function FillField({
   disabled = false,
   disabledReason,
   keyframe,
+  nodeId,
 }: {
   value: Fill | null
   onCommit: (next: Fill | null) => void
@@ -68,9 +74,32 @@ export function FillField({
   disabledReason?: string
   /** Optional timeline diamond aligned with the Fill row label. */
   keyframe?: ReactNode
+  /**
+   * The node this fill belongs to. When set and the popover is open on
+   * a gradient tab, on-canvas drag handles for that gradient appear on
+   * the node in the viewport (see GradientEditOverlay). Omitted for
+   * multi-select / non-geometric targets where a canvas gizmo wouldn't
+   * have anywhere sensible to live.
+   */
+  nodeId?: string
 }) {
   const [open, setOpen] = useState(false)
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null)
+  const gradientEditTokenRef = useRef(Symbol('gradient-edit'))
+
+  useEffect(() => {
+    const token = gradientEditTokenRef.current
+    if (nodeId && open && value && isGradientFillKind(value.kind)) {
+      gradientEditStore.set(token, {
+        nodeId,
+        fill: value as GradientFill,
+        onCommit,
+      })
+    } else {
+      gradientEditStore.clear(token)
+    }
+    return () => gradientEditStore.clear(token)
+  }, [nodeId, open, value, onCommit])
 
   // Cached CSS preview so the swatch doesn't re-serialize during hover /
   // re-render. Trivial today, but the popover's stops list re-renders on

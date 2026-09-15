@@ -119,6 +119,46 @@ describe('animation presets', () => {
     })
   })
 
+  it('animates Isometric In toward a fixed tilt rather than the node base rotation', () => {
+    const api = createSceneAPI()
+    const nodeId = api.createNode('frame', null)
+
+    applyPreset(api, nodeId, 'isometric-in', 0)
+
+    const rotX = api
+      .getTracksForNode(nodeId)
+      .find((t) => t.propertyId === 'transform.rotationX')
+    const rotY = api
+      .getTracksForNode(nodeId)
+      .find((t) => t.propertyId === 'transform.rotationY')
+
+    expect(rotX?.keyframes.map((k) => k.value)).toEqual([0, 35])
+    expect(rotY?.keyframes.map((k) => k.value)).toEqual([0, 45])
+  })
+
+  it('scatters two different nodes to two different offsets, deterministically', () => {
+    const api = createSceneAPI()
+    const a = api.createNode('rect', null)
+    const b = api.createNode('rect', null)
+
+    applyPreset(api, a, 'scatter-in', 0)
+    applyPreset(api, b, 'scatter-in', 0)
+
+    const startX = (id: string) =>
+      api
+        .getTracksForNode(id)
+        .find((t) => t.propertyId === 'transform.x')?.keyframes[0]?.value
+
+    const aStart = startX(a)
+    const bStart = startX(b)
+    expect(aStart).not.toBeUndefined()
+    expect(aStart).not.toEqual(bStart)
+
+    // Re-applying is deterministic for the same node.
+    applyPreset(api, a, 'scatter-in', 0)
+    expect(startX(a)).toEqual(aStart)
+  })
+
   it('does not author child tracks when Fade In targets a container', () => {
     const api = createSceneAPI()
     const parentId = api.createNode('frame', null)

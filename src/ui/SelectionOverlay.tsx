@@ -9,6 +9,8 @@ import type { AnimatedValue } from '@/ui/hooks/useAnimatedValues'
 import type { InheritedAnim } from '@/ui/canvasRenderHelpers'
 import { ResizeHandles } from '@/ui/ResizeHandles'
 import { VectorEditOverlay } from '@/ui/VectorEditOverlay'
+import { GradientEditOverlay } from '@/ui/GradientEditOverlay'
+import { gradientEditStore } from '@/ui/gradientEditStore'
 import { isEditableVectorNode } from '@/scene'
 import { nodeGeometryPreviewStore } from '@/ui/nodeGeometryPreviewStore'
 import { nodeGeometryPreviewRect } from '@/ui/nodeGeometryPreviewRect'
@@ -61,6 +63,11 @@ export function SelectionOverlay({
     nodeGeometryPreviewStore.subscribe,
     nodeGeometryPreviewStore.getSnapshot,
     nodeGeometryPreviewStore.getSnapshot,
+  )
+  const gradientEditTarget = useSyncExternalStore(
+    gradientEditStore.subscribe,
+    gradientEditStore.getSnapshot,
+    gradientEditStore.getSnapshot,
   )
   const rootId = rootIdOverride ?? api.getRoot()
 
@@ -217,6 +224,34 @@ export function SelectionOverlay({
                 rectHeight={rect.height}
                 zoom={zoom}
               />
+            ) : null}
+            {isSingle && gradientEditTarget?.nodeId === id ? (
+              <svg
+                className="pointer-events-none absolute inset-0 overflow-visible"
+                width={rect.width}
+                height={rect.height}
+              >
+                <GradientEditOverlay
+                  nodeId={id}
+                  rectWidth={rect.width}
+                  rectHeight={rect.height}
+                  zoom={zoom}
+                  projection={{
+                    clientToLocal: (clientX, clientY) => {
+                      const host = document.querySelector(
+                        `[data-selection-node="${id}"]`,
+                      )
+                      if (!(host instanceof HTMLElement)) return null
+                      const box = host.getBoundingClientRect()
+                      if (box.width < 1 || box.height < 1) return null
+                      return {
+                        x: ((clientX - box.left) / box.width) * rect.width,
+                        y: ((clientY - box.top) / box.height) * rect.height,
+                      }
+                    },
+                  }}
+                />
+              </svg>
             ) : null}
           </div>
         )
