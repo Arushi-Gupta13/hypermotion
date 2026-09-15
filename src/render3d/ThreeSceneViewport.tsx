@@ -1623,7 +1623,7 @@ function syncPlanes(
     applyPlaneTextureTransform(record.mesh, plane)
     if (planeNeedsBendMesh(plane)) {
       applyPlaneBendGeometry(
-        record.mesh.geometry as THREE.PlaneGeometry,
+        record.mesh.geometry as unknown as Parameters<typeof applyPlaneBendGeometry>[0],
         plane,
       )
     }
@@ -6249,7 +6249,12 @@ function createPlaneGeometry(
     segments,
     segments,
   )
-  if (segments > 1) applyPlaneBendGeometry(geometry, plane)
+  if (segments > 1) {
+    applyPlaneBendGeometry(
+      geometry as unknown as Parameters<typeof applyPlaneBendGeometry>[0],
+      plane,
+    )
+  }
   return geometry
 }
 

@@ -35,7 +35,7 @@ describe('layer bend field', () => {
 
   it('does not zero static bend when animated fields are missing', () => {
     expect(
-      mergeLayerBend({ tl: 180 }, { tl: undefined, top: undefined }).tl,
+      mergeLayerBend({ ...DEFAULT_LAYER_BEND, tl: 180 }, { tl: undefined, top: undefined }).tl,
     ).toBe(180)
   })
 })
