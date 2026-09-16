@@ -608,6 +608,16 @@ export interface FrameNode extends NodeBase {
    * default. See {@link LayoutGuide} for the per-entry shape.
    */
   layoutGuides: LayoutGuide[]
+  /**
+   * Set on a device mockup's outer frame at insertion time (see
+   * `insertDeviceMockup` in `@/scene/builtins/deviceMockups`). Lets the
+   * 3D renderer look up the exact `DeviceMockupSpec` for a mockup without
+   * guessing from its name or dimensions. Values match `DeviceMockupKind`
+   * — kept as a plain string here (rather than importing that type) since
+   * `deviceMockups.ts` is a builtin that depends on this module, not the
+   * other way around.
+   */
+  deviceMockupKind?: string
 }
 
 export interface RectNode extends NodeBase {

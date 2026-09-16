@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from 'vitest'
-import { distributeTransforms } from './gridDistribution'
+import { createSceneAPI } from '@/scene/doc'
+import { applyGridDistribution, distributeTransforms } from './gridDistribution'
 
 describe('distributeTransforms', () => {
   it('spaces a full-sweep radial ring evenly with no seam', () => {
@@ -72,5 +73,44 @@ describe('distributeTransforms', () => {
 
   it('returns an empty array for zero items', () => {
     expect(distributeTransforms({ kind: 'spherical', radius: 10 }, 0)).toEqual([])
+  })
+})
+
+describe('applyGridDistribution', () => {
+  it('centers differently-sized nodes on the ring instead of their top-left corner', () => {
+    const api = createSceneAPI()
+    // A small and a large node, both starting at the same corner — if the
+    // arrange math anchored on transform.x/y (top-left) instead of each
+    // node's own visual center, the large node would end up visibly
+    // off-ring relative to the small one.
+    const small = api.createNode('rect', null)
+    api.setNodeProperty(small, 'size', { width: 20, height: 20 })
+    const large = api.createNode('rect', null)
+    api.setNodeProperty(large, 'size', { width: 200, height: 200 })
+
+    applyGridDistribution(
+      api,
+      [small, large],
+      { kind: 'radial', radius: 300, startAngle: 0, sweep: 180, faceOutward: false },
+    )
+
+    const centerOf = (id: string) => {
+      const node = api.getNode(id)!
+      const size = 'size' in node ? node.size : { width: 0, height: 0 }
+      const width = typeof size.width === 'number' ? size.width : 0
+      const height = typeof size.height === 'number' ? size.height : 0
+      return { x: node.transform.x + width / 2, y: node.transform.y + height / 2 }
+    }
+
+    const smallCenter = centerOf(small)
+    const largeCenter = centerOf(large)
+    // Both points sit on a 300px-radius ring around their shared centroid,
+    // regardless of each node's own box size.
+    const centroid = {
+      x: (smallCenter.x + largeCenter.x) / 2,
+      y: (smallCenter.y + largeCenter.y) / 2,
+    }
+    expect(Math.hypot(smallCenter.x - centroid.x, smallCenter.y - centroid.y)).toBeCloseTo(300)
+    expect(Math.hypot(largeCenter.x - centroid.x, largeCenter.y - centroid.y)).toBeCloseTo(300)
   })
 })

@@ -184,6 +184,11 @@ import {
   type CameraDepthOfField,
   type InheritedAnim,
 } from '@/ui/canvasRenderHelpers'
+import {
+  absoluteFrameOrigin,
+  findDropTargetFrame,
+  type DropTarget,
+} from '@/ui/dropTargetFrame'
 
 const MemoizedThreeSceneViewport = memo(ThreeSceneViewport)
 MemoizedThreeSceneViewport.displayName = 'MemoizedThreeSceneViewport'
@@ -2963,12 +2968,24 @@ export function Canvas() {
       const dropPos = workspaceOnly
         ? viewportDrop ?? undefined
         : clientToCanvas(e.clientX, e.clientY) ?? undefined
+
+      // If the drop lands inside a nested frame (e.g. a device mockup's
+      // Screen), parent the new content there instead of always at the
+      // artboard root — otherwise it's a root-level sibling that happens
+      // to overlap the frame on screen today, but doesn't move with it.
+      const dropTarget =
+        !workspaceOnly && rootId && dropPos && solved
+          ? findDropTargetFrame(api, solved, inherited, rootId, dropPos)
+          : null
+      const dropParentId = dropTarget?.parentId ?? (workspaceOnly ? null : rootId)
+      const dropLocal = dropTarget?.local ?? dropPos
+
       if (componentId) {
-        const id = instantiateComponent(api, componentId, workspaceOnly ? null : rootId, {
+        const id = instantiateComponent(api, componentId, dropParentId, {
           absolute: true,
           workspaceOnly,
-          position: dropPos
-            ? { x: Math.round(dropPos.x), y: Math.round(dropPos.y) }
+          position: dropLocal
+            ? { x: Math.round(dropLocal.x), y: Math.round(dropLocal.y) }
             : undefined,
         })
         if (id) {
@@ -2994,16 +3011,16 @@ export function Canvas() {
       const ids: NodeId[] = []
       if (imageFiles.length > 0) {
         ids.push(
-          ...(await importImageFiles(imageFiles, api, workspaceOnly ? null : rootId, {
-            dropPos: dropPos ?? undefined,
+          ...(await importImageFiles(imageFiles, api, dropParentId, {
+            dropPos: dropLocal ?? undefined,
             workspaceOnly,
           })),
         )
       }
       if (mediaFiles.length > 0) {
         ids.push(
-          ...(await importMediaFiles(mediaFiles, api, workspaceOnly ? null : rootId, {
-            dropPos: dropPos ?? undefined,
+          ...(await importMediaFiles(mediaFiles, api, dropParentId, {
+            dropPos: dropLocal ?? undefined,
             workspaceOnly,
           })),
         )
@@ -3013,7 +3030,17 @@ export function Canvas() {
         setTool('select')
       }
     },
-    [api, rootId, clientToCanvas, clientToViewport, isInsideArtboard, setSelection, setTool],
+    [
+      api,
+      rootId,
+      solved,
+      inherited,
+      clientToCanvas,
+      clientToViewport,
+      isInsideArtboard,
+      setSelection,
+      setTool,
+    ],
   )
 
   useEffect(() => {
@@ -3789,6 +3816,21 @@ export function SceneLayer({
   const selection = useUI((s) => s.selection)
   const setSelection = useUI((s) => s.setSelection)
 
+  // Lets a dragged node reparent into whatever frame it's dropped onto
+  // (e.g. a device mockup's Screen) instead of staying a root-level
+  // sibling that only visually overlaps it — see useDragToMove. `null`
+  // when there's no root to resolve against (empty scene).
+  const dragReparentContext: DragReparentContext | undefined = useMemo(() => {
+    if (!rootId) return undefined
+    return {
+      absoluteOrigin: (id: NodeId) =>
+        absoluteFrameOrigin(api, solved, inherited, rootId, id),
+      resolveDropTarget:
+        (excludeId: NodeId) => (point: { x: number; y: number }) =>
+          findDropTargetFrame(api, solved, inherited, rootId, point, excludeId),
+    }
+  }, [api, solved, inherited, rootId])
+
   const onNodeContext = (id: NodeId, clientX: number, clientY: number) => {
     // If the right-clicked node isn't in the current selection, replace
     // selection with it. Keeps the menu actions matching visible state.
@@ -3977,6 +4019,7 @@ export function SceneLayer({
         isSelected={selection.includes(id)}
         ancestorClip={ancestorClip[id]}
         maskedBy={maskInfo[id]}
+        dragReparentContext={dragReparentContext}
         onClick={(e) => {
           e.stopPropagation()
         }}
@@ -4511,6 +4554,18 @@ function DomFocusPlaneOverlay({
  * children that exceed their bounds are clipped rather than bleeding
  * onto other frames. Matches Figma / Jitter.
  */
+/**
+ * Scene-wide drag-to-reparent plumbing, built once per SceneLayer render
+ * from its `solved`/`inherited`/`rootId` and handed down to every
+ * NodeView. `resolveDropTarget` is curried per-node (excluding that
+ * node's own subtree from candidacy) rather than baked into one shared
+ * closure, since which subtree to exclude differs per dragged node.
+ */
+type DragReparentContext = {
+  absoluteOrigin: (id: NodeId) => { x: number; y: number }
+  resolveDropTarget: (excludeId: NodeId) => (point: { x: number; y: number }) => DropTarget
+}
+
 type NodeViewProps = {
   node: SceneNode
   rect: Rect
@@ -4524,6 +4579,8 @@ type NodeViewProps = {
   maskedBy?: { rect: Rect; kind: NodeKind; corner: number }
   onClick: (e: React.MouseEvent<HTMLDivElement>) => void
   onContextMenu: (e: React.MouseEvent<HTMLDivElement>) => void
+  /** Omitted where drag-to-reparent doesn't apply (e.g. the text-scrub preview proxy). */
+  dragReparentContext?: DragReparentContext
 }
 
 function NodeView(props: NodeViewProps) {
@@ -4542,6 +4599,7 @@ function VisualNodeView({
   maskedBy,
   onClick,
   onContextMenu,
+  dragReparentContext,
 }: NodeViewProps) {
   const vectorImageSrc =
     node.kind === 'vector'
@@ -4878,7 +4936,16 @@ function VisualNodeView({
   // Drag-to-move, activated on pointerdown. Only inner (non-root) nodes
   // get drag behavior — the root is the scene frame, which is positioned
   // by the canvas box itself.
-  const drag = useDragToMove(node.id, isRoot)
+  const drag = useDragToMove(
+    node.id,
+    isRoot,
+    dragReparentContext
+      ? {
+          absoluteOrigin: dragReparentContext.absoluteOrigin,
+          resolveDropTarget: dragReparentContext.resolveDropTarget(node.id),
+        }
+      : undefined,
+  )
 
   // Ancestor clip — when this node sits under a clipping frame, we
   // render an OUTER clip wrapper around the node's normal styled box.

@@ -2,8 +2,8 @@
 
 import { useState, type CSSProperties, type ReactNode } from 'react'
 import { useUI } from '@/state/ui'
-import { useSceneAPI, useSceneVersion } from '@/scene'
-import type { EasingKind, Fill, NodeId } from '@/scene'
+import { PROPERTIES, useSceneAPI, useSceneVersion } from '@/scene'
+import type { EasingKind, Fill, NodeId, Track } from '@/scene'
 import type { SceneAPI } from '@/scene/doc'
 import { UNDOABLE_GESTURE_ORIGIN } from '@/scene/undo'
 import {
@@ -170,6 +170,9 @@ export function PresetsPanel() {
   // panels, but timing itself consumes the full compound keyframe refs.
   const selectedTrackIds = useUI((s) => s.selectedTrackIds)
   const selectedKeyframes = useUI((s) => s.selectedKeyframes)
+  const setSelectedTrackIds = useUI((s) => s.setSelectedTrackIds)
+  const setSelectedKeyframes = useUI((s) => s.setSelectedKeyframes)
+  const setPlayhead = useUI((s) => s.setPlayhead)
   const hasTimelineTimingSelection =
     selectedKeyframes.length > 0 || selectedTrackIds.length > 0
   const trackFilter = timelineTrackFilter(
@@ -442,6 +445,22 @@ export function PresetsPanel() {
         outCount={outs.length}
       />
       <PresetGrid presets={visibleLayerPresets} onPick={stampPreset} />
+
+      {selection.length === 1 ? (
+        <AppliedTracksList
+          api={api}
+          nodeId={selection[0]!}
+          selectedTrackId={
+            selectedTrackIds.length === 1 ? selectedTrackIds[0]! : null
+          }
+          onPick={(track) => {
+            setSelectedTrackIds([track.id])
+            setSelectedKeyframes([])
+            const firstKeyframe = track.keyframes[0]
+            if (firstKeyframe) setPlayhead(firstKeyframe.time)
+          }}
+        />
+      ) : null}
 
       {!hasTimelineTimingSelection ? (
         <EasingPicker
@@ -2671,6 +2690,71 @@ function PresetTabs({
         </button>
       ))}
     </SquircleSurface>
+  )
+}
+
+/**
+ * Flat, clickable list of the tracks authored on the selected layer —
+ * an easier target than the small keyframe dots on the timeline.
+ * Clicking a row selects that whole track (same selection shape as
+ * clicking timeline keyframes) and jumps the playhead to its first
+ * keyframe, so the canvas and the timing card below both land on it.
+ */
+function AppliedTracksList({
+  api,
+  nodeId,
+  selectedTrackId,
+  onPick,
+}: {
+  api: SceneAPI
+  nodeId: NodeId
+  selectedTrackId: string | null
+  onPick: (track: Track) => void
+}) {
+  const tracks = api
+    .getTracksForNode(nodeId)
+    .filter((track) => track.keyframes.length > 0)
+  if (tracks.length === 0) return null
+
+  return (
+    <div className="rounded-md bg-app-bg p-2.5 shadow-[var(--shadow-control)]">
+      <div className="mb-1.5 text-[11px] font-semibold text-text-muted">
+        Applied to this layer
+      </div>
+      <div className="space-y-1">
+        {tracks.map((track) => {
+          const label = PROPERTIES[track.propertyId as keyof typeof PROPERTIES]?.label ?? track.propertyId
+          const first = track.keyframes[0]!
+          const last = track.keyframes[track.keyframes.length - 1]!
+          const origin = first.presetOrigin
+          return (
+            <button
+              key={track.id}
+              type="button"
+              onClick={() => onPick(track)}
+              aria-pressed={selectedTrackId === track.id}
+              className={[
+                'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[11px]',
+                selectedTrackId === track.id
+                  ? 'bg-accent/12 text-accent'
+                  : 'text-text-muted hover:bg-panel-raised hover:text-text',
+              ].join(' ')}
+            >
+              <span className="min-w-0 flex-1 truncate">{label}</span>
+              {origin ? (
+                <span className="shrink-0 rounded bg-panel px-1 text-[9px] uppercase tracking-wide text-text-dim">
+                  {origin}
+                </span>
+              ) : null}
+              <span className="shrink-0 font-mono text-[10px] tabular-nums text-text-dim">
+                {first.time.toFixed(2)}s
+                {last.time !== first.time ? `–${last.time.toFixed(2)}s` : ''}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    </div>
   )
 }
 

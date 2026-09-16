@@ -192,8 +192,22 @@ export function applyGridDistribution(
     .filter((n): n is Node => n != null)
   if (nodes.length === 0) return
 
+  // `transform.x/y` is each node's top-left offset, not its visual
+  // center — arranging by the raw corner makes a ring/sphere read as
+  // lopsided (every box hangs off to the right/below its plotted
+  // point). Anchor and place by each node's own center instead, so
+  // differently sized layers still land symmetrically on the shape.
+  const centerOf = (node: Node): { x: number; y: number } => {
+    const width = 'size' in node && typeof node.size.width === 'number' ? node.size.width : 0
+    const height = 'size' in node && typeof node.size.height === 'number' ? node.size.height : 0
+    return { x: node.transform.x + width / 2, y: node.transform.y + height / 2 }
+  }
+
   const centroid = nodes.reduce(
-    (acc, n) => ({ x: acc.x + n.transform.x, y: acc.y + n.transform.y }),
+    (acc, n) => {
+      const c = centerOf(n)
+      return { x: acc.x + c.x, y: acc.y + c.y }
+    },
     { x: 0, y: 0 },
   )
   centroid.x /= nodes.length
@@ -208,10 +222,14 @@ export function applyGridDistribution(
       if (node.position !== 'absolute') {
         api.setNodeProperty(node.id, 'position', 'absolute')
       }
+      const width = 'size' in node && typeof node.size.width === 'number' ? node.size.width : 0
+      const height = 'size' in node && typeof node.size.height === 'number' ? node.size.height : 0
+      const targetCenterX = centroid.x + t.x
+      const targetCenterY = centroid.y + t.y
       api.setNodeProperty(node.id, 'transform', {
         ...node.transform,
-        x: centroid.x + t.x,
-        y: centroid.y + t.y,
+        x: targetCenterX - width / 2,
+        y: targetCenterY - height / 2,
         z: node.transform.z + t.z,
         rotation: t.rotation,
         rotationX: t.rotationX,

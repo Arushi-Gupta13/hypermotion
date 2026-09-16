@@ -40,7 +40,14 @@ describe('device mockup builtins', () => {
 
     const bezel = children[2] as VectorNode
     expect(bezel.kind).toBe('vector')
-    expect(bezel.vector.items[0]?.fills[0]).toMatchObject({ color: spec.bezelColor })
+    // The body fill is a subtle gradient sheen (not a flat color) for a
+    // more physical, less "rounded rectangle" read — its stops bracket
+    // the spec's base bezelColor rather than equaling it directly.
+    const bodyFill = bezel.vector.items[0]?.fills[0]
+    expect(bodyFill?.kind).toBe('linear')
+    expect(bodyFill && 'stops' in bodyFill ? bodyFill.stops.map((s) => s.color) : []).toContain(
+      spec.bezelColor,
+    )
 
     const screen = children[1] as FrameNode
     expect(screen.kind).toBe('frame')
@@ -107,6 +114,23 @@ describe('device mockup builtins', () => {
     expect(punchHole.vector.items[0]?.id).toBe('punch-hole')
   })
 
+  it('gives the mockup an ambient drop shadow so it reads as sitting above the canvas', () => {
+    const api = createSceneAPI()
+    const rootId = api.createNode('frame', null, {
+      name: 'Artboard',
+      size: { width: 1920, height: 1080 },
+    })
+    const outerId = insertDeviceMockup(api, rootId, 'iphone13', { x: 0, y: 0 })
+    const outer = api.getNode(outerId) as FrameNode
+    expect(outer.appearance.effects).toHaveLength(1)
+    expect(outer.appearance.effects[0]).toMatchObject({ kind: 'shadow', visible: true })
+  })
+
+  it('uses iPhone SE\'s real 375×667 UIKit point resolution for the screen', () => {
+    expect(DEVICE_MOCKUP_SPECS.iphonese.screen.width).toBe(375)
+    expect(DEVICE_MOCKUP_SPECS.iphonese.screen.height).toBe(667)
+  })
+
   it('gives each iPhone model a distinct screen size', () => {
     const widths = new Set(
       (['iphone17promax', 'iphone17pro', 'iphone13', 'iphonese'] as const).map(
@@ -141,7 +165,7 @@ describe('device mockup builtins', () => {
     const firstChildren = api.getChildren(firstId)
     const firstBezel = firstChildren[firstChildren.length - 1] as VectorNode
     const firstFill = firstBezel.vector.items[0]!.fills[0]!
-    expect(firstFill.kind).toBe('solid')
+    expect(firstFill.kind).toBe('linear')
     api.setNodeProperty(firstBezel.id, 'vector', {
       ...firstBezel.vector,
       items: [
@@ -153,9 +177,11 @@ describe('device mockup builtins', () => {
     })
     const secondChildren = api.getChildren(secondId)
     const secondBezel = secondChildren[secondChildren.length - 1] as VectorNode
-    expect(secondBezel.vector.items[0]?.fills[0]).toMatchObject({
-      color: DEVICE_MOCKUP_SPECS.iphone17pro.bezelColor,
-    })
+    const secondFill = secondBezel.vector.items[0]?.fills[0]
+    expect(secondFill?.kind).toBe('linear')
+    expect(
+      secondFill && 'stops' in secondFill ? secondFill.stops.map((s) => s.color) : [],
+    ).toContain(DEVICE_MOCKUP_SPECS.iphone17pro.bezelColor)
   })
 
   it('auto-numbers a second mockup of the same kind', () => {

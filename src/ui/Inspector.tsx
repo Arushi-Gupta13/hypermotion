@@ -126,6 +126,11 @@ import {
   resetCameraTransformGroup,
   type CameraTransformResetGroup,
 } from '@/ui/cameraReset'
+import {
+  applyCameraAnglePreset,
+  CAMERA_ANGLE_PRESETS,
+  type CameraAnglePresetId,
+} from '@/ui/cameraAnglePresets'
 import type { SceneAPI } from '@/scene/doc'
 import { UNDOABLE_GESTURE_ORIGIN } from '@/scene/undo'
 import {
@@ -3604,6 +3609,15 @@ function NodeDetails({ node, api }: { node: Node; api: SceneAPI }) {
     cameraPreviewStore.clear(node.id)
     resetCameraTransformGroup(api, node.id, group, playhead)
   }
+  const applyCameraAngle = (presetId: CameraAnglePresetId) => {
+    if (node.kind !== 'camera') return
+    const ui = useUI.getState()
+    const playhead = ui.playing
+      ? getAnimEngine().getPlayhead()
+      : ui.playhead
+    cameraPreviewStore.clear(node.id)
+    applyCameraAnglePreset(api, node.id, presetId, playhead)
+  }
   const patchAppearance = (patch: Partial<Appearance>) => {
     api.doc.transact(() => {
       api.setNodeProperty(node.id, 'appearance', {
@@ -4235,6 +4249,19 @@ function NodeDetails({ node, api }: { node: Node; api: SceneAPI }) {
               />
             }
           >
+            <div className="flex flex-wrap gap-1 pb-1">
+              {CAMERA_ANGLE_PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => applyCameraAngle(preset.id)}
+                  title={`Jump to the ${preset.label} camera angle`}
+                  className="hm-control-surface h-6 rounded px-2 text-[10px] text-text-muted hover:text-text"
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
             <KeyframeSliderRow
               label="Rotate X"
               value={liveRotX}

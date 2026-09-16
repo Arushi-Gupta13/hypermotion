@@ -5,6 +5,7 @@ import { useSceneAPI } from '@/scene'
 import type { NodeId } from '@/scene'
 import { useUI } from '@/state/ui'
 import { canMoveChildOnCanvas } from '@/ui/canvasMove'
+import { UNDOABLE_GESTURE_ORIGIN } from '@/scene/undo'
 import {
   getAnimEngine,
   recordKeyframesForPatch,
@@ -16,6 +17,7 @@ import {
   nodeTransformPreviewStore,
   type NodeTransformPreview,
 } from '@/ui/nodeTransformPreviewStore'
+import type { DropTarget } from '@/ui/dropTargetFrame'
 
 /**
  * Pointer-driven drag-to-move for a single scene node.
@@ -45,7 +47,22 @@ import {
  * by the canvas box, not by a transform offset, and dragging it would
  * only confuse things.
  */
-export function useDragToMove(nodeId: NodeId, isRoot: boolean) {
+export interface DragReparentSupport {
+  /** Absolute canvas-space top-left of `id`'s content box. */
+  absoluteOrigin: (id: NodeId) => { x: number; y: number }
+  /**
+   * Resolve which frame a canvas-space point lands inside, excluding
+   * `nodeId`'s own subtree so a dragged frame can't be reparented into
+   * itself or one of its children.
+   */
+  resolveDropTarget: (point: { x: number; y: number }) => DropTarget
+}
+
+export function useDragToMove(
+  nodeId: NodeId,
+  isRoot: boolean,
+  reparent?: DragReparentSupport,
+) {
   const api = useSceneAPI()
   const setSelection = useUI((s) => s.setSelection)
   const dragRef = useRef<{
@@ -183,6 +200,43 @@ export function useDragToMove(nodeId: NodeId, isRoot: boolean) {
             },
           )
           nodeTransformPreviewStore.finish()
+
+          // After the position commit, check whether the node now
+          // visually sits inside a different frame (e.g. it was dragged
+          // onto a device mockup's Screen) and reparent it there so it
+          // actually moves with that frame from now on, instead of just
+          // visually overlapping it while staying a root-level sibling.
+          if (reparent) {
+            const node = api.getNode(nodeId)
+            if (node && node.parent) {
+              const parentOrigin = reparent.absoluteOrigin(node.parent)
+              const width = 'size' in node && typeof node.size.width === 'number' ? node.size.width : 0
+              const height = 'size' in node && typeof node.size.height === 'number' ? node.size.height : 0
+              const center = {
+                x: parentOrigin.x + node.transform.x + width / 2,
+                y: parentOrigin.y + node.transform.y + height / 2,
+              }
+              const target = reparent.resolveDropTarget(center)
+              if (target.parentId !== node.parent) {
+                const newParentOrigin = reparent.absoluteOrigin(target.parentId)
+                api.doc.transact(() => {
+                  api.appendChild(target.parentId, nodeId)
+                  api.moveChild(target.parentId, nodeId, 0)
+                  if (node.position !== 'absolute') {
+                    api.setNodeProperty(nodeId, 'position', 'absolute')
+                  }
+                  const fresh = api.getNode(nodeId)
+                  if (fresh) {
+                    api.setNodeProperty(nodeId, 'transform', {
+                      ...fresh.transform,
+                      x: center.x - width / 2 - newParentOrigin.x,
+                      y: center.y - height / 2 - newParentOrigin.y,
+                    })
+                  }
+                }, UNDOABLE_GESTURE_ORIGIN)
+              }
+            }
+          }
         } else {
           nodeTransformPreviewStore.clear()
         }
@@ -196,7 +250,7 @@ export function useDragToMove(nodeId: NodeId, isRoot: boolean) {
       window.addEventListener('pointerup', onUp)
       window.addEventListener('pointercancel', onUp)
     },
-    [api, isRoot, nodeId, setSelection],
+    [api, isRoot, nodeId, setSelection, reparent],
   )
 
   return { onPointerDown }

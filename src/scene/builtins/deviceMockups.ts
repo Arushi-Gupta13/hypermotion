@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { SceneAPI } from '@/scene/doc'
-import type { NodeId, VectorDocument, VectorItem } from '@/scene/types'
+import type { NodeId, VectorDocument, VectorItem, VectorPaint } from '@/scene/types'
 import { createVectorItem, solidVectorPaint } from '@/scene/vector/model'
 import { VectorPathBuilder } from '@/scene/vector/path'
 
@@ -88,13 +88,17 @@ export const DEVICE_MOCKUP_SPECS: Record<DeviceMockupKind, DeviceMockupSpec> = {
   iphonese: {
     label: 'iPhone SE',
     family: 'iphone',
-    width: 320,
-    height: 622,
-    cornerRadius: 26,
+    // 375×667 is Apple's actual UIKit point resolution for the SE
+    // 2nd/3rd gen (and, before it, the iPhone 6/7/8) — the one figure
+    // here that's a real, well-established spec rather than a stylized
+    // guess. Bezel margins around it are still stylized.
+    width: 399,
+    height: 767,
+    cornerRadius: 30,
     bezelColor: '#1c1c1c',
     // Flat top bezel (no island/notch) and a taller bottom bezel for the
     // physical home button — the visual tell of the pre-notch iPhone body.
-    screen: { x: 12, y: 46, width: 296, height: 480 },
+    screen: { x: 12, y: 40, width: 375, height: 667 },
     screenCornerRadius: 0,
     topChrome: 'none',
     homeButton: true,
@@ -190,12 +194,85 @@ function pillGeometry(
   return roundedRectGeometry(idPrefix, width, height, height / 2)
 }
 
+function hexToRgb(hex: string): [number, number, number] {
+  const clean = hex.replace('#', '')
+  const full = clean.length === 3 ? clean.split('').map((c) => c + c).join('') : clean
+  const n = parseInt(full, 16)
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+  const clamp = (v: number) => Math.max(0, Math.min(255, Math.round(v)))
+  return `#${[r, g, b].map((v) => clamp(v).toString(16).padStart(2, '0')).join('')}`
+}
+
+/** Blend a hex color toward white (amount > 0) or black (amount < 0). */
+function shade(hex: string, amount: number): string {
+  const [r, g, b] = hexToRgb(hex)
+  const target = amount > 0 ? 255 : 0
+  const t = Math.min(1, Math.abs(amount))
+  return rgbToHex(r + (target - r) * t, g + (target - g) * t, b + (target - b) * t)
+}
+
+/**
+ * A diagonal metal/glass-style sheen instead of one flat fill — the single
+ * biggest lever for reading as "device" instead of "rounded rectangle" in
+ * a procedurally-drawn (no image asset) mockup. Browser chrome stays flat;
+ * a toolbar reads as UI, not a physical shell.
+ */
+function bezelBodyFill(spec: DeviceMockupSpec): VectorPaint {
+  if (spec.family === 'browser') {
+    return solidVectorPaint(spec.bezelColor, 'body-fill')
+  }
+  return {
+    id: 'body-fill',
+    kind: 'linear',
+    visible: true,
+    opacity: 1,
+    blendMode: 'normal',
+    coordinateSpace: 'objectBoundingBox',
+    start: { x: 0.1, y: 0 },
+    end: { x: 0.9, y: 1 },
+    stops: [
+      { at: 0, color: shade(spec.bezelColor, 0.24) },
+      { at: 0.1, color: shade(spec.bezelColor, 0.07) },
+      { at: 0.55, color: spec.bezelColor },
+      { at: 1, color: shade(spec.bezelColor, -0.2) },
+    ],
+  }
+}
+
 function bezelVectorDocument(spec: DeviceMockupSpec): VectorDocument {
   const items: VectorItem[] = [
     createVectorItem({
       id: 'body',
       geometry: roundedRectGeometry('body', spec.width, spec.height, spec.cornerRadius),
-      fills: [solidVectorPaint(spec.bezelColor, 'body-fill')],
+      fills: [bezelBodyFill(spec)],
+      strokes:
+        spec.family === 'browser'
+          ? []
+          : [
+              {
+                id: 'body-edge-highlight',
+                paint: {
+                  id: 'body-edge-highlight-paint',
+                  kind: 'solid',
+                  color: shade(spec.bezelColor, 0.4),
+                  visible: true,
+                  opacity: 0.4,
+                  blendMode: 'normal',
+                },
+                width: 1,
+                align: 'inside',
+                cap: 'butt',
+                join: 'round',
+                miterLimit: 4,
+                dash: [],
+                dashOffset: 0,
+                opacity: 1,
+                visible: true,
+              },
+            ],
     }),
   ]
   if (spec.family === 'browser') {
@@ -379,7 +456,25 @@ export function insertDeviceMockup(
       position: 'absolute',
       size: { width: spec.width, height: spec.height },
       clipsContent: false,
-      appearance: EMPTY_APPEARANCE,
+      // Lets the 3D renderer look up this mockup's exact spec (for the
+      // PBR device body mesh) without guessing from its name or size.
+      deviceMockupKind: kind,
+      appearance: {
+        ...EMPTY_APPEARANCE,
+        // Soft ambient shadow so the mockup reads as sitting in front of
+        // whatever's behind it, instead of pasted flat onto the canvas.
+        effects: [
+          {
+            kind: 'shadow',
+            color: 'oklch(0.15 0.01 280 / 0.35)',
+            offsetX: 0,
+            offsetY: spec.height * 0.03,
+            blur: spec.width * 0.12,
+            spread: -(spec.width * 0.03),
+            visible: true,
+          },
+        ],
+      },
       transform: { ...IDENTITY_TRANSFORM, x: at.x, y: at.y },
     })
 

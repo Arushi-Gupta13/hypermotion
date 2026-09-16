@@ -694,6 +694,7 @@ export function createSceneAPI(doc: Y.Doc = new Y.Doc()): SceneAPI {
           // Inspector's Layout-guide section adds entries on demand.
           layoutGuides:
             (y.get('layoutGuides') as FrameNode['layoutGuides']) ?? [],
+          deviceMockupKind: y.get('deviceMockupKind') as string | undefined,
         } as FrameNode
       case 'rect':
       case 'ellipse':
@@ -1242,6 +1243,10 @@ export function createSceneAPI(doc: Y.Doc = new Y.Doc()): SceneAPI {
               'layoutGuides',
               (props as Partial<FrameNode>)?.layoutGuides ?? [],
             )
+            const deviceMockupKind = (props as Partial<FrameNode>)?.deviceMockupKind
+            if (deviceMockupKind !== undefined) {
+              y.set('deviceMockupKind', deviceMockupKind)
+            }
           } else {
             const cp = props as Partial<import('@/scene/types').ComponentNode> | undefined
             y.set('variants', cp?.variants ?? [])

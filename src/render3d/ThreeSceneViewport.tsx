@@ -60,6 +60,15 @@ import type {
 } from '@/scene'
 import { displayedText } from '@/scene'
 import {
+  DEVICE_MOCKUP_SPECS,
+  type DeviceMockupKind,
+  type DeviceMockupSpec,
+} from '@/scene/builtins/deviceMockups'
+import {
+  createDeviceMockupBodyMesh,
+  disposeDeviceMockupBodyMesh,
+} from '@/render3d/deviceMockupMesh'
+import {
   buildWorldPlanes,
   cameraSpaceDepth,
   cameraFrustumCorners,
@@ -517,6 +526,11 @@ export function ThreeSceneViewport({
     playhead: number
   } | null>(null)
   const planesRef = useRef<Map<NodeId, PlaneRecord>>(new Map())
+  // A device mockup's "Bezel" (iPhone family only, stage one) renders as a
+  // real lit 3D mesh instead of a flat vector plane — see
+  // deviceMockupMesh.ts. Tracked in its own map, entirely separate from
+  // `planesRef`, since these are THREE.Group instances, not PlaneRecords.
+  const pbrMockupMeshesRef = useRef<Map<NodeId, THREE.Group>>(new Map())
   const helpersRef = useRef<THREE.Group | null>(null)
   const planeSyncRef = useRef<{
     planes: Plane3D[]
@@ -744,6 +758,20 @@ export function ThreeSceneViewport({
     helpers.name = '3D helpers'
     scene.add(helpers)
     helpersRef.current = helpers
+
+    // Minimal 3-point studio rig for lit PBR meshes (e.g. device mockup
+    // bodies — see deviceMockupMesh.ts). Every other layer in this app
+    // renders through unlit MeshBasicMaterial, which structurally ignores
+    // scene lights, so this is additive and doesn't change how anything
+    // else looks.
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.6)
+    keyLight.position.set(300, -600, 800)
+    scene.add(keyLight)
+    const fillLight = new THREE.DirectionalLight(0xffffff, 0.5)
+    fillLight.position.set(-400, 300, 400)
+    scene.add(fillLight)
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.35)
+    scene.add(ambientLight)
     onAvailabilityChange?.(true)
 
     return () => {
@@ -761,6 +789,11 @@ export function ThreeSceneViewport({
       planes.clear()
       planeSyncRef.current = null
       publishRender3dVideos(planes)
+      for (const mesh of pbrMockupMeshesRef.current.values()) {
+        scene.remove(mesh)
+        disposeDeviceMockupBodyMesh(mesh)
+      }
+      pbrMockupMeshesRef.current.clear()
       clearHelperGroup(helpers)
       renderer.dispose()
       // HMR and React development remounts can otherwise leave retired WebGL
@@ -872,6 +905,7 @@ export function ThreeSceneViewport({
         syncPlanes(
           scene,
           planesRef.current,
+          pbrMockupMeshesRef.current,
           api,
           planeBuildContext,
           layout,
@@ -894,6 +928,7 @@ export function ThreeSceneViewport({
         )
       } else {
         clearPlanes(scene, planesRef.current)
+        clearPbrMockupMeshes(scene, pbrMockupMeshesRef.current)
       }
     }
     // Keep the comparison snapshot current even when a camera-only preview
@@ -1216,6 +1251,7 @@ function previewedTextAnimation(
 function syncPlanes(
   scene: THREE.Scene,
   records: Map<NodeId, PlaneRecord>,
+  pbrMockupMeshes: Map<NodeId, THREE.Group>,
   api: SceneAPI,
   planeBuildContext: PlaneBuildContext,
   layout: SolvedLayout,
@@ -1237,6 +1273,7 @@ function syncPlanes(
   texturePixelRatio: number,
 ) {
   const active = new Set<NodeId>()
+  const pbrActive = new Set<NodeId>()
   const selected = new Set(selectedIds)
   const hidden = new Set(hiddenNodeIds)
   const emittedPlaneNodeIds = new Set(planes.map((plane) => plane.nodeId))
@@ -1272,6 +1309,49 @@ function syncPlanes(
     maximumBlurLevel > 0
   for (const plane of planes) {
     active.add(plane.nodeId)
+
+    // Stage-one PBR device mockups: an iPhone-family mockup's "Bezel"
+    // vector item renders as a real lit 3D mesh instead of the generic
+    // flat-texture plane path. Every other node (including Samsung/
+    // browser mockups) is untouched.
+    const mockupSpec = iphoneMockupSpecForBezelNode(api, plane.node)
+    if (mockupSpec) {
+      pbrActive.add(plane.nodeId)
+      let mesh = pbrMockupMeshes.get(plane.nodeId)
+      if (!mesh) {
+        mesh = createDeviceMockupBodyMesh(mockupSpec)
+        scene.add(mesh)
+        pbrMockupMeshes.set(plane.nodeId, mesh)
+      }
+      applyPlaneTransform(mesh, plane)
+      mesh.visible = !hiddenNodeIds.includes(plane.nodeId)
+      // Every other layer in this compositor stacks purely by renderOrder
+      // (depth-test is off on the flat planes — see the material notes in
+      // deviceMockupMesh.ts) and ignores this, so without it the PBR body
+      // always painted in scene-add order (default renderOrder 0) instead
+      // of respecting the node's z-index / paint-order position, and its
+      // real GPU depth-testing let it occlude or be occluded by unrelated
+      // layers based on raw Z rather than the app's paint order.
+      const bodyRenderOrder = layerRenderOrder(
+        plane.node,
+        plane.paintOrder,
+        plane.alwaysOnTop,
+      )
+      mesh.renderOrder = bodyRenderOrder
+      // The glass plate is a child mesh sitting proud of the body's front
+      // face; with depth-testing off (see deviceMockupMesh.ts) draw order
+      // alone decides which paints on top, so give it a fractional bump
+      // rather than tying it to the body — a whole-number gap is reserved
+      // for the *next* layer's paintOrder elsewhere in the scene.
+      let childIndex = 0
+      mesh.traverse((child) => {
+        if (!(child instanceof THREE.Mesh)) return
+        child.renderOrder = bodyRenderOrder + childIndex * 0.5
+        childIndex += 1
+      })
+      continue
+    }
+
     let record = records.get(plane.nodeId)
     if (record && record.renderKind !== plane.renderKind) {
       scene.remove(record.mesh)
@@ -1678,6 +1758,12 @@ function syncPlanes(
     records.delete(id)
   }
   publishRender3dVideos(records)
+  for (const [id, mesh] of pbrMockupMeshes) {
+    if (pbrActive.has(id)) continue
+    scene.remove(mesh)
+    disposeDeviceMockupBodyMesh(mesh)
+    pbrMockupMeshes.delete(id)
+  }
 }
 
 interface TextSegmentPlaneSyncOptions {
@@ -3547,6 +3633,14 @@ function clearPlanes(scene: THREE.Scene, records: Map<NodeId, PlaneRecord>) {
   publishRender3dVideos(records)
 }
 
+function clearPbrMockupMeshes(scene: THREE.Scene, meshes: Map<NodeId, THREE.Group>) {
+  for (const mesh of meshes.values()) {
+    scene.remove(mesh)
+    disposeDeviceMockupBodyMesh(mesh)
+  }
+  meshes.clear()
+}
+
 interface ProjectedPlaneTextureScaleOptions {
   plane: Plane3D
   camera: ResolvedCamera3D
@@ -3683,6 +3777,24 @@ function renderSharpPlaneCanvas(
       textureScale,
     )
   )
+}
+
+/**
+ * If `node` is the "Bezel" vector item of an iPhone-family device mockup,
+ * returns that mockup's spec so the caller can build the PBR body mesh.
+ * Returns null for every other node, including Samsung/browser mockup
+ * bezels — those keep rendering through the ordinary flat-plane path.
+ */
+function iphoneMockupSpecForBezelNode(
+  api: SceneAPI,
+  node: Node,
+): DeviceMockupSpec | null {
+  if (node.name !== 'Bezel' || !node.parent) return null
+  const parent = api.getNode(node.parent)
+  if (!parent || parent.kind !== 'frame' || !parent.deviceMockupKind) return null
+  const spec = DEVICE_MOCKUP_SPECS[parent.deviceMockupKind as DeviceMockupKind]
+  if (!spec || spec.family !== 'iphone') return null
+  return spec
 }
 
 function applyPlaneTransform(object: THREE.Object3D, plane: Plane3D) {
