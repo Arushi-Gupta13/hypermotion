@@ -1049,6 +1049,79 @@ body[data-preview-mode='1'] [data-canvas-root] {
   animation-timing-function: cubic-bezier(0.7, 0, 0.84, 0);
 }
 
+@keyframes hm-flip-in-3d {
+  0%, 10%   { opacity: 0; transform: perspective(200px) rotateY(180deg); }
+  55%, 88%  { opacity: 1; transform: perspective(200px) rotateY(0deg); }
+  100%      { opacity: 0; transform: perspective(200px) rotateY(180deg); }
+}
+.hm-preset-flip-in-3d { animation-name: hm-flip-in-3d; }
+
+@keyframes hm-flip-out-3d {
+  0%, 10%   { opacity: 1; transform: perspective(200px) rotateY(0deg); }
+  55%, 88%  { opacity: 0; transform: perspective(200px) rotateY(180deg); }
+  100%      { opacity: 1; transform: perspective(200px) rotateY(0deg); }
+}
+.hm-preset-flip-out-3d {
+  animation-name: hm-flip-out-3d;
+  animation-timing-function: cubic-bezier(0.7, 0, 0.84, 0);
+}
+
+@keyframes hm-swing-in {
+  0%, 10%   { opacity: 0; transform: rotate(-45deg); }
+  55%, 88%  { opacity: 1; transform: rotate(0deg); }
+  100%      { opacity: 0; transform: rotate(-45deg); }
+}
+.hm-preset-swing-in {
+  animation-name: hm-swing-in;
+  animation-timing-function: cubic-bezier(0.68, -0.55, 0.27, 1.55);
+}
+
+@keyframes hm-swing-out {
+  0%, 10%   { opacity: 1; transform: rotate(0deg); }
+  55%, 88%  { opacity: 0; transform: rotate(45deg); }
+  100%      { opacity: 1; transform: rotate(0deg); }
+}
+.hm-preset-swing-out {
+  animation-name: hm-swing-out;
+  animation-timing-function: cubic-bezier(0.7, 0, 0.84, 0);
+}
+
+@keyframes hm-flow-in {
+  0%, 10%   { opacity: 0; transform: translate(-14px, 4px) rotate(-6deg); }
+  55%       { opacity: 1; transform: translate(-3px, -2px) rotate(2deg); }
+  88%       { opacity: 1; transform: translate(0, 0) rotate(0deg); }
+  100%      { opacity: 0; transform: translate(-14px, 4px) rotate(-6deg); }
+}
+.hm-preset-flow-in { animation-name: hm-flow-in; }
+
+@keyframes hm-flow-out {
+  0%, 10%   { opacity: 1; transform: translate(0, 0) rotate(0deg); }
+  55%       { opacity: 1; transform: translate(3px, -2px) rotate(-2deg); }
+  88%       { opacity: 0; transform: translate(14px, 4px) rotate(6deg); }
+  100%      { opacity: 1; transform: translate(0, 0) rotate(0deg); }
+}
+.hm-preset-flow-out {
+  animation-name: hm-flow-out;
+  animation-timing-function: cubic-bezier(0.7, 0, 0.84, 0);
+}
+
+@keyframes hm-wipe-in-left {
+  0%, 10%   { transform-origin: left center; transform: scaleX(0); }
+  55%, 88%  { transform-origin: left center; transform: scaleX(1); }
+  100%      { transform-origin: left center; transform: scaleX(0); }
+}
+.hm-preset-wipe-in-left { animation-name: hm-wipe-in-left; }
+
+@keyframes hm-wipe-out-left {
+  0%, 10%   { transform-origin: left center; transform: scaleX(1); }
+  55%, 88%  { transform-origin: left center; transform: scaleX(0); }
+  100%      { transform-origin: left center; transform: scaleX(1); }
+}
+.hm-preset-wipe-out-left {
+  animation-name: hm-wipe-out-left;
+  animation-timing-function: cubic-bezier(0.7, 0, 0.84, 0);
+}
+
 /* ============================================================
    Text animation preset previews
    ============================================================ */

@@ -6,6 +6,7 @@ import type { NodeId } from '@/scene'
 import { useUI } from '@/state/ui'
 import { canMoveChildOnCanvas } from '@/ui/canvasMove'
 import { UNDOABLE_GESTURE_ORIGIN } from '@/scene/undo'
+import { isPerspectiveTemplateSlot } from '@/scene/builtins/perspectiveTemplates'
 import {
   getAnimEngine,
   recordKeyframesForPatch,
@@ -85,6 +86,21 @@ export function useDragToMove(
       if (isRoot) return
       const node = api.getNode(nodeId)
       if (!node || node.locked) return
+      // A Perspective template's ring is meant to be edited as one
+      // asset (Radius / roundness / etc. in the Inspector), not by
+      // hand-dragging individual slot frames out of their computed
+      // position — redirect the click to select the template's
+      // container instead, and skip drag entirely. Only fires when the
+      // slot frame itself is the click target (an empty slot, or one
+      // whose fill content doesn't intercept the pointer) — clicking
+      // through to an image already dropped inside a slot still selects
+      // and drags that image normally.
+      const templateContainerId = isPerspectiveTemplateSlot(api, nodeId)
+      if (templateContainerId) {
+        e.stopPropagation()
+        useUI.getState().setSelection([templateContainerId])
+        return
+      }
       e.stopPropagation()
       // Selecting on pointerdown (not click) matches Figma's feel —
       // the selection frame appears before you've released the mouse.

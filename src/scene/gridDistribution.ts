@@ -13,7 +13,7 @@ import type { Node, NodeId } from '@/scene/types'
  * persistent generator node or renderer changes.
  */
 
-export type GridDistributionKind = 'radial' | 'path' | 'spherical'
+export type GridDistributionKind = 'radial' | 'path' | 'spherical' | 'ring'
 
 export interface RadialDistributionParams {
   kind: 'radial'
@@ -42,10 +42,21 @@ export interface SphericalDistributionParams {
   radius: number
 }
 
+export interface RingDistributionParams {
+  kind: 'ring'
+  /** Distance from the ring's center axis, in canvas pixels. */
+  radius: number
+  /** Degrees; 0 = the +Z direction (toward the viewer), increasing clockwise when viewed from above. */
+  startAngle: number
+  /** Rotate each item around Y so it faces outward from the ring's center axis. */
+  faceOutward: boolean
+}
+
 export type GridDistributionParams =
   | RadialDistributionParams
   | PathDistributionParams
   | SphericalDistributionParams
+  | RingDistributionParams
 
 export interface DistributedTransform {
   x: number
@@ -66,6 +77,8 @@ export function defaultGridDistributionParams(
       return { kind: 'path', from: { x: -200, y: 0 }, to: { x: 200, y: 0 }, curve: 0, followTangent: false }
     case 'spherical':
       return { kind: 'spherical', radius: 220 }
+    case 'ring':
+      return { kind: 'ring', radius: 220, startAngle: 0, faceOutward: true }
   }
 }
 
@@ -129,31 +142,87 @@ function pathTransforms(
   return out
 }
 
-/** Fibonacci-sphere distribution — evenly spaced points on a sphere surface. */
+/**
+ * Fibonacci-sphere distribution — evenly spaced points on a sphere
+ * surface.
+ *
+ * The renderer paints planes in sibling/creation order with depth
+ * testing disabled (see scene3d.ts's `hitTestPlanes` — later siblings
+ * composite on top, like DOM stacking, not a z-buffer). A full sphere
+ * puts roughly half its points on the far hemisphere with no
+ * per-frame re-sort to keep them correctly hidden, so returning them
+ * in raw Fibonacci-index order reads as a random jumble of squares —
+ * whichever half happens to land later in the array wins, regardless
+ * of which is actually nearer the camera. Sorting back-to-front by z
+ * (the camera looks down +Z, so larger z is farther away) before
+ * returning fixes this for the arrangement's resting pose: farthest
+ * points are created first (painted first, on the bottom), nearest
+ * points last (painted last, on top) — a standard painter's-algorithm
+ * ordering. It only holds exactly at the pose this was computed for;
+ * once the whole arrangement spins, the *true* front/back split keeps
+ * changing while paint order can't, so some occlusion error returns
+ * during rotation — an inherent limit of this renderer's planes, not
+ * fixable by sorting harder. The sort is by unit-sphere z (before the
+ * `radius` multiply), so it's stable across radius edits — regenerating
+ * with a new radius doesn't shuffle which point owns which slot index.
+ */
 function sphericalTransforms(
   params: SphericalDistributionParams,
   count: number,
 ): DistributedTransform[] {
   const { radius } = params
-  const out: DistributedTransform[] = []
+  const points: { px: number; py: number; pz: number }[] = []
   const goldenAngle = Math.PI * (3 - Math.sqrt(5))
   for (let i = 0; i < count; i++) {
     const v = count <= 1 ? 0 : 1 - (i / (count - 1)) * 2
     const ringRadius = Math.sqrt(Math.max(0, 1 - v * v))
     const theta = goldenAngle * i
-    const px = Math.cos(theta) * ringRadius
-    const pz = Math.sin(theta) * ringRadius
-    const py = v
+    points.push({ px: Math.cos(theta) * ringRadius, py: v, pz: Math.sin(theta) * ringRadius })
+  }
+  points.sort((a, b) => b.pz - a.pz)
+  return points.map(({ px, py, pz }) => {
     // Face each item outward along the sphere's local normal.
     const rotationY = (Math.atan2(px, pz) * 180) / Math.PI
     const rotationX = (Math.asin(-py) * 180) / Math.PI
-    out.push({
+    return {
       x: px * radius,
       y: py * radius,
       z: pz * radius,
       rotation: 0,
       rotationX,
       rotationY,
+    }
+  })
+}
+
+/**
+ * Evenly spaced points around a circle in the XZ plane (depth varies,
+ * height doesn't) — a flat "bracelet"/tunnel ring you can walk or orbit
+ * a camera around, as opposed to `radialTransforms`' flat XY-plane ring
+ * (which just spaces items across the screen plane with no depth). Each
+ * item can face outward around its own Y axis, matching how
+ * `sphericalTransforms` orients its points but restricted to one band
+ * instead of the whole sphere surface.
+ */
+function ringTransforms(
+  params: RingDistributionParams,
+  count: number,
+): DistributedTransform[] {
+  const { radius, startAngle, faceOutward } = params
+  const step = count <= 1 ? 0 : 360 / count
+  const out: DistributedTransform[] = []
+  for (let i = 0; i < count; i++) {
+    const angle = startAngle + step * i
+    const rad = (angle * Math.PI) / 180
+    const x = radius * Math.sin(rad)
+    const z = radius * Math.cos(rad)
+    out.push({
+      x,
+      y: 0,
+      z,
+      rotation: 0,
+      rotationX: 0,
+      rotationY: faceOutward ? angle : 0,
     })
   }
   return out
@@ -171,6 +240,8 @@ export function distributeTransforms(
       return pathTransforms(params, count)
     case 'spherical':
       return sphericalTransforms(params, count)
+    case 'ring':
+      return ringTransforms(params, count)
   }
 }
 

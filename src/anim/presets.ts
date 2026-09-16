@@ -46,14 +46,29 @@ export type AnimPresetId =
   // presets above.
   | 'tilt-in-3d'
   | 'tilt-out-3d'
+  | 'flip-in-3d'
+  | 'flip-out-3d'
   | 'spin-in'
   | 'spin-out'
+  | 'swing-in'
+  | 'swing-out'
   | 'focus-in'
   | 'focus-out'
   | 'scatter-in'
   | 'scatter-out'
   | 'isometric-in'
   | 'isometric-out'
+  // Carousel & Flow — a smooth arced glide, distinct from the Basic
+  // slide presets by its curved (3-keyframe) path and slight tilt.
+  | 'flow-in'
+  | 'flow-out'
+  // Reveal & Wipe — approximated with an edge-anchored scaleX sweep
+  // rather than a real moving mask edge (see the design note above the
+  // wipe cases in applyPreset): presets stay "keyframes only, no hidden
+  // layer," and this app's mask model needs an actual sibling node,
+  // which no preset creates.
+  | 'wipe-in-left'
+  | 'wipe-out-left'
 
 export type AnimPresetCategory =
   | 'basic'
@@ -62,6 +77,8 @@ export type AnimPresetCategory =
   | 'spotlight-focus'
   | 'stack-scatter'
   | 'isometric'
+  | 'carousel-flow'
+  | 'reveal-wipe'
 
 export const ANIM_PRESET_CATEGORY_LABELS: Record<AnimPresetCategory, string> = {
   basic: 'Basic',
@@ -70,6 +87,8 @@ export const ANIM_PRESET_CATEGORY_LABELS: Record<AnimPresetCategory, string> = {
   'spotlight-focus': 'Spotlight & Focus',
   'stack-scatter': 'Stack & Scatter',
   isometric: 'Isometric',
+  'carousel-flow': 'Carousel & Flow',
+  'reveal-wipe': 'Reveal & Wipe',
 }
 
 export interface AnimPreset {
@@ -201,14 +220,22 @@ export const PRESETS: AnimPreset[] = [
   { id: 'pop', label: 'Pop', direction: 'in', category: 'basic', duration: 0.5, easing: { bezier: [0.34, 1.56, 0.64, 1] } },
   { id: 'tilt-in-3d', label: 'Tilt In 3D', direction: 'in', category: '3d-perspective', duration: 0.6, easing: 'ease-out' },
   { id: 'tilt-out-3d', label: 'Tilt Out 3D', direction: 'out', category: '3d-perspective', duration: 0.6, easing: 'ease-in' },
+  { id: 'flip-in-3d', label: 'Flip In 3D', direction: 'in', category: '3d-perspective', duration: 0.55, easing: 'ease-out' },
+  { id: 'flip-out-3d', label: 'Flip Out 3D', direction: 'out', category: '3d-perspective', duration: 0.55, easing: 'ease-in' },
   { id: 'spin-in', label: 'Spin In', direction: 'in', category: 'orbit', duration: 0.6, easing: 'ease-out' },
   { id: 'spin-out', label: 'Spin Out', direction: 'out', category: 'orbit', duration: 0.6, easing: 'ease-in' },
+  { id: 'swing-in', label: 'Swing In', direction: 'in', category: 'orbit', duration: 0.6, easing: { bezier: [0.68, -0.55, 0.27, 1.55] } },
+  { id: 'swing-out', label: 'Swing Out', direction: 'out', category: 'orbit', duration: 0.6, easing: 'ease-in' },
   { id: 'focus-in', label: 'Focus In', direction: 'in', category: 'spotlight-focus', duration: 0.5, easing: 'ease-out' },
   { id: 'focus-out', label: 'Focus Out', direction: 'out', category: 'spotlight-focus', duration: 0.5, easing: 'ease-in' },
   { id: 'scatter-in', label: 'Scatter In', direction: 'in', category: 'stack-scatter', duration: 0.55, easing: { bezier: [0.34, 1.2, 0.64, 1] } },
   { id: 'scatter-out', label: 'Scatter Out', direction: 'out', category: 'stack-scatter', duration: 0.55, easing: 'ease-in' },
   { id: 'isometric-in', label: 'Isometric In', direction: 'in', category: 'isometric', duration: 0.6, easing: 'ease-out' },
   { id: 'isometric-out', label: 'Isometric Out', direction: 'out', category: 'isometric', duration: 0.6, easing: 'ease-in' },
+  { id: 'flow-in', label: 'Flow In', direction: 'in', category: 'carousel-flow', duration: 0.6, easing: 'ease-out' },
+  { id: 'flow-out', label: 'Flow Out', direction: 'out', category: 'carousel-flow', duration: 0.6, easing: 'ease-in' },
+  { id: 'wipe-in-left', label: 'Wipe In', direction: 'in', category: 'reveal-wipe', duration: 0.5, easing: 'ease-out' },
+  { id: 'wipe-out-left', label: 'Wipe Out', direction: 'out', category: 'reveal-wipe', duration: 0.5, easing: 'ease-in' },
 ]
 
 /** Deterministic small hash so "Scatter" spreads each layer differently but repeatably. */
@@ -496,5 +523,90 @@ export function applyPreset(
       kf('transform.scaleY', end, baseSY * 0.7)
       break
     }
+
+    // --- 3D & Perspective (variety): a literal card flip ------------
+    case 'flip-in-3d':
+      kf('appearance.opacity', startTime, 0, p.easing)
+      kf('appearance.opacity', end, baseOp)
+      kf('transform.rotationY', startTime, baseRotY + 180, p.easing)
+      kf('transform.rotationY', end, baseRotY)
+      break
+    case 'flip-out-3d':
+      kf('appearance.opacity', startTime, baseOp, p.easing)
+      kf('appearance.opacity', end, 0)
+      kf('transform.rotationY', startTime, baseRotY, p.easing)
+      kf('transform.rotationY', end, baseRotY + 180)
+      break
+
+    // --- Orbit (variety): pendulum swing with overshoot easing ------
+    case 'swing-in':
+      kf('appearance.opacity', startTime, 0, p.easing)
+      kf('appearance.opacity', end, baseOp)
+      kf('transform.rotation', startTime, baseRotation - 45, p.easing)
+      kf('transform.rotation', end, baseRotation)
+      break
+    case 'swing-out':
+      kf('appearance.opacity', startTime, baseOp, p.easing)
+      kf('appearance.opacity', end, 0)
+      kf('transform.rotation', startTime, baseRotation, p.easing)
+      kf('transform.rotation', end, baseRotation + 45)
+      break
+
+    // --- Carousel & Flow: a curved glide, not a straight slide ------
+    // Distinguished from the Basic slide presets by a genuine 3-stop
+    // arced path (a mid-flight dip/rise + a slight tilt) rather than a
+    // straight 2-stop line.
+    case 'flow-in': {
+      const mid = startTime + p.duration * 0.55
+      kf('appearance.opacity', startTime, 0, p.easing)
+      kf('appearance.opacity', mid, baseOp)
+      kf('appearance.opacity', end, baseOp)
+      kf('transform.x', startTime, baseX - 140, p.easing)
+      kf('transform.x', mid, baseX - 32)
+      kf('transform.x', end, baseX)
+      kf('transform.y', startTime, baseY + 18, p.easing)
+      kf('transform.y', mid, baseY - 8)
+      kf('transform.y', end, baseY)
+      kf('transform.rotation', startTime, baseRotation - 6, p.easing)
+      kf('transform.rotation', mid, baseRotation + 2)
+      kf('transform.rotation', end, baseRotation)
+      break
+    }
+    case 'flow-out': {
+      const mid = startTime + p.duration * 0.45
+      kf('appearance.opacity', startTime, baseOp, p.easing)
+      kf('appearance.opacity', mid, baseOp)
+      kf('appearance.opacity', end, 0)
+      kf('transform.x', startTime, baseX, p.easing)
+      kf('transform.x', mid, baseX + 32)
+      kf('transform.x', end, baseX + 140)
+      kf('transform.y', startTime, baseY, p.easing)
+      kf('transform.y', mid, baseY - 8)
+      kf('transform.y', end, baseY + 18)
+      kf('transform.rotation', startTime, baseRotation, p.easing)
+      kf('transform.rotation', mid, baseRotation - 2)
+      kf('transform.rotation', end, baseRotation + 6)
+      break
+    }
+
+    // --- Reveal & Wipe -------------------------------------------------
+    // Approximated with an edge-anchored scaleX sweep, not a real moving
+    // mask edge — this app's mask model needs an actual clip sibling
+    // node (see MVP scope on NodeBase.isMask), and presets deliberately
+    // never create hidden layers of their own (see the module docstring
+    // at the top of this file). Pins the transform's anchor to the left
+    // edge (a one-time static write, not a keyframe) so scaleX reveals
+    // from that edge instead of expanding from the center. Opacity is
+    // left alone on purpose — a wipe reveals, it doesn't fade.
+    case 'wipe-in-left':
+      api.setNodeProperty(nodeId, 'transform', { ...node.transform, anchorX: 0 })
+      kf('transform.scaleX', startTime, 0, p.easing)
+      kf('transform.scaleX', end, baseSX)
+      break
+    case 'wipe-out-left':
+      api.setNodeProperty(nodeId, 'transform', { ...node.transform, anchorX: 0 })
+      kf('transform.scaleX', startTime, baseSX, p.easing)
+      kf('transform.scaleX', end, 0)
+      break
   }
 }

@@ -123,6 +123,11 @@ import {
   type GridDistributionParams,
 } from '@/scene/gridDistribution'
 import {
+  PERSPECTIVE_TEMPLATES,
+  applyPerspectiveTemplateParams,
+  isPerspectiveTemplateSlot,
+} from '@/scene/builtins/perspectiveTemplates'
+import {
   resetCameraTransformGroup,
   type CameraTransformResetGroup,
 } from '@/ui/cameraReset'
@@ -157,6 +162,7 @@ import {
   stabilizeNumericValue,
 } from '@/ui/fields/numericExpression'
 import { PresetsPanel } from '@/ui/PresetsPanel'
+import { PerspectivePanel } from '@/ui/PerspectivePanel'
 import { PaperShaderInspector } from '@/ui/PaperShaderInspector'
 import { AlignTools } from '@/ui/AlignTools'
 import { EasingPicker } from '@/ui/EasingPicker'
@@ -422,6 +428,8 @@ export function Inspector() {
           >
             {mode === 'animate' ? (
               <PresetsPanel />
+            ) : mode === 'perspective' ? (
+              <PerspectivePanel />
             ) : showScene ? (
               <SceneDetails api={api} project={project} />
             ) : multiNodes && multiNodes.length > 1 ? (
@@ -443,7 +451,7 @@ export function Inspector() {
 function ModeTabs() {
   const mode = useUI((s) => s.inspectorMode)
   const setMode = useUI((s) => s.setInspectorMode)
-  const modes = ['properties', 'animate'] as const
+  const modes = ['properties', 'animate', 'perspective'] as const
 
   const moveFocus = (
     event: React.KeyboardEvent<HTMLButtonElement>,
@@ -485,7 +493,7 @@ function ModeTabs() {
               data-active={active}
               className="hm-inspector-segment focus-visible:outline-none"
             >
-              {m === 'properties' ? 'Properties' : 'Animate'}
+              {m === 'properties' ? 'Properties' : m === 'animate' ? 'Animate' : 'Perspective'}
             </button>
           )
         })}
@@ -1316,6 +1324,7 @@ function MultiNodeDetails({ nodes, api }: { nodes: Node[]; api: SceneAPI }) {
                 { value: 'radial', label: 'Radial' },
                 { value: 'path', label: 'Path' },
                 { value: 'spherical', label: 'Spherical' },
+                { value: 'ring', label: 'Ring' },
               ]}
               onCommit={(kind) => {
                 setArrangeKind(kind)
@@ -1432,6 +1441,34 @@ function MultiNodeDetails({ nodes, api }: { nodes: Node[]; api: SceneAPI }) {
                 onCommit={(radius) => applyArrange({ ...arrangeParams, radius })}
               />
             </FieldRow>
+          ) : null}
+          {arrangeParams.kind === 'ring' ? (
+            <>
+              <FieldRow label="Radius">
+                <NumberField
+                  value={arrangeParams.radius}
+                  min={0}
+                  step={1}
+                  ariaLabel="Radius"
+                  onCommit={(radius) => applyArrange({ ...arrangeParams, radius })}
+                />
+              </FieldRow>
+              <FieldRow label="Start angle">
+                <NumberField
+                  value={arrangeParams.startAngle}
+                  step={1}
+                  suffix="°"
+                  ariaLabel="Start angle"
+                  onCommit={(startAngle) => applyArrange({ ...arrangeParams, startAngle })}
+                />
+              </FieldRow>
+              <FieldRow label="Face outward">
+                <CheckboxField
+                  value={arrangeParams.faceOutward}
+                  onCommit={(faceOutward) => applyArrange({ ...arrangeParams, faceOutward })}
+                />
+              </FieldRow>
+            </>
           ) : null}
           <p className="text-[10px] leading-4 text-text-dim">
             Arranges the {count} selected layers around their shared center.
@@ -3276,6 +3313,14 @@ function pivotPresetForTransform(transform: Transform): PivotPreset {
 
 function NodeDetails({ node, api }: { node: Node; api: SceneAPI }) {
   const version = useSceneVersion()
+  // A Perspective template's ring is one editable asset (see
+  // PerspectiveTemplateSection) — a slot's own position/rotation is
+  // computed from the template's params, not hand-authored, so its
+  // Transform section is replaced with a pointer back to the container
+  // instead of live X/Y/Z fields a user could use to drag it out of
+  // place. Only blocks the frame itself; an image already dropped
+  // inside a slot is an ordinary child and edits normally.
+  const perspectiveTemplateContainerId = isPerspectiveTemplateSlot(api, node.id)
   const playing = useUI((state) => state.playing)
   const focusPickingCameraId = useUI((state) => state.focusPickingCameraId)
   const setFocusPickingCameraId = useUI(
@@ -4347,7 +4392,7 @@ function NodeDetails({ node, api }: { node: Node; api: SceneAPI }) {
         />
       )}
 
-      {node.kind !== 'camera' && node.kind !== 'audio' && (
+      {node.kind !== 'camera' && node.kind !== 'audio' && !perspectiveTemplateContainerId && (
       <Section title="Transform">
         {/* See multi-select branch above for rationale. */}
         <AlignTools api={api} selection={[node.id]} />
@@ -4632,6 +4677,26 @@ function NodeDetails({ node, api }: { node: Node; api: SceneAPI }) {
         </InspectorDisclosure>
       </Section>
       )}
+
+      {perspectiveTemplateContainerId ? (
+        <Section title="Transform">
+          <p className="text-[11px] leading-4 text-text-dim">
+            This card's position, rotation, and size come from its
+            Perspective template — select the template to adjust
+            Radius, roundness, and the other ring-wide controls instead
+            of moving this card by hand.
+          </p>
+          <button
+            type="button"
+            onClick={() =>
+              useUI.getState().setSelection([perspectiveTemplateContainerId])
+            }
+            className="hm-control-surface h-7 w-full px-3 text-left text-[11px] text-accent hover:bg-panel-raised"
+          >
+            Select template
+          </button>
+        </Section>
+      ) : null}
 
       {supportsBend && !liveBend && (
         <Section title="Deform">
@@ -5395,6 +5460,14 @@ function NodeDetails({ node, api }: { node: Node; api: SceneAPI }) {
 
       {node.kind === 'vector' ? (
         <VectorSection node={node} api={api} />
+      ) : null}
+
+      {node.kind === 'frame' && node.perspectiveTemplate ? (
+        <PerspectiveTemplateSection
+          nodeId={node.id}
+          params={node.perspectiveTemplate}
+          api={api}
+        />
       ) : null}
 
       {node.kind !== 'camera' && node.kind !== 'audio' ? (
@@ -9011,6 +9084,124 @@ function syncVectorPaintAtCurrentGeometryKeyframe(
     return { ...kf, value: apply(value as import('@/scene').VectorDocument) }
   })
   api.setTrack({ ...track, keyframes })
+}
+
+/**
+ * Live controls for a Perspective template's whole arrangement — Radius,
+ * card size/roundness, slot count, spin speed. Every edit calls
+ * applyPerspectiveTemplateParams, which regenerates all slot positions
+ * from these params in one shot; it's the "treat the ring as one asset"
+ * counterpart to hand-editing each of its slot children individually in
+ * their own transform/appearance fields.
+ */
+function PerspectiveTemplateSection({
+  nodeId,
+  params,
+  api,
+}: {
+  nodeId: NodeId
+  params: NonNullable<FrameNode['perspectiveTemplate']>
+  api: SceneAPI
+}) {
+  const spec = PERSPECTIVE_TEMPLATES[params.kind as keyof typeof PERSPECTIVE_TEMPLATES]
+  const arrangement = spec?.arrangement ?? 'ring'
+  const isGrid = arrangement === 'grid'
+  const spins = (spec?.animation ?? 'spin-y') === 'spin-y'
+  const patch = (next: Partial<typeof params>) => {
+    applyPerspectiveTemplateParams(api, nodeId, { ...params, ...next })
+  }
+  return (
+    <Section title="Perspective template">
+      {!isGrid ? (
+        <FieldRow label="Radius">
+          <NumberField
+            value={params.radius}
+            min={20}
+            step={1}
+            ariaLabel="Ring radius"
+            onCommit={(radius) => patch({ radius })}
+          />
+        </FieldRow>
+      ) : null}
+      {isGrid ? (
+        <FieldRow label="Columns">
+          <NumberField
+            value={params.gridColumns}
+            min={1}
+            max={16}
+            step={1}
+            ariaLabel="Grid columns"
+            onCommit={(gridColumns) => patch({ gridColumns: Math.round(gridColumns) })}
+          />
+        </FieldRow>
+      ) : null}
+      {isGrid ? (
+        <FieldRow label="Card gap">
+          <NumberField
+            value={params.gridGap}
+            min={0}
+            step={1}
+            ariaLabel="Grid gap"
+            onCommit={(gridGap) => patch({ gridGap })}
+          />
+        </FieldRow>
+      ) : null}
+      <FieldRow label="Card width">
+        <NumberField
+          value={params.slotWidth}
+          min={10}
+          step={1}
+          ariaLabel="Card width"
+          onCommit={(slotWidth) => patch({ slotWidth })}
+        />
+      </FieldRow>
+      <FieldRow label="Card height">
+        <NumberField
+          value={params.slotHeight}
+          min={10}
+          step={1}
+          ariaLabel="Card height"
+          onCommit={(slotHeight) => patch({ slotHeight })}
+        />
+      </FieldRow>
+      <FieldRow label="Card roundness">
+        <NumberField
+          value={params.slotCornerRadius}
+          min={0}
+          step={1}
+          ariaLabel="Card corner roundness"
+          onCommit={(slotCornerRadius) => patch({ slotCornerRadius })}
+        />
+      </FieldRow>
+      <FieldRow label="Card count">
+        <NumberField
+          value={params.slotCount}
+          min={2}
+          max={64}
+          step={1}
+          ariaLabel="Number of cards"
+          onCommit={(slotCount) => patch({ slotCount: Math.round(slotCount) })}
+        />
+      </FieldRow>
+      {spins ? (
+        <FieldRow label="Spin duration">
+          <NumberField
+            value={params.spinDuration}
+            min={0.5}
+            step={0.5}
+            suffix="s"
+            ariaLabel="Spin duration"
+            onCommit={(spinDuration) => patch({ spinDuration })}
+          />
+        </FieldRow>
+      ) : null}
+      <p className="text-[10px] leading-4 text-text-dim">
+        Adjusts the whole arrangement at once. Cards you've already
+        dropped media into keep their content — only position, size, and
+        roundness update.
+      </p>
+    </Section>
+  )
 }
 
 function VectorSection({

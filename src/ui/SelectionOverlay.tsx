@@ -12,6 +12,7 @@ import { VectorEditOverlay } from '@/ui/VectorEditOverlay'
 import { GradientEditOverlay } from '@/ui/GradientEditOverlay'
 import { gradientEditStore } from '@/ui/gradientEditStore'
 import { isEditableVectorNode } from '@/scene'
+import { isPerspectiveTemplateSlot } from '@/scene/builtins/perspectiveTemplates'
 import { nodeGeometryPreviewStore } from '@/ui/nodeGeometryPreviewStore'
 import { nodeGeometryPreviewRect } from '@/ui/nodeGeometryPreviewRect'
 import {
@@ -93,7 +94,8 @@ export function SelectionOverlay({
     handleNode.id !== rootId &&
     !handleNode.locked &&
     'size' in handleNode &&
-    !editingVector
+    !editingVector &&
+    !isPerspectiveTemplateSlot(api, handleNode.id)
 
   return (
     <>

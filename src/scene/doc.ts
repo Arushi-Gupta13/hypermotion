@@ -241,6 +241,7 @@ export interface NodeBaseMutable {
   layout: Layout
   size: Size
   clipsContent: boolean
+  perspectiveTemplate: import('@/scene/types').FrameNode['perspectiveTemplate']
   arc: import('@/scene/types').EllipseArc
   alwaysOnTop: boolean
   visible: boolean
@@ -695,6 +696,9 @@ export function createSceneAPI(doc: Y.Doc = new Y.Doc()): SceneAPI {
           layoutGuides:
             (y.get('layoutGuides') as FrameNode['layoutGuides']) ?? [],
           deviceMockupKind: y.get('deviceMockupKind') as string | undefined,
+          perspectiveTemplate: y.get('perspectiveTemplate') as
+            | FrameNode['perspectiveTemplate']
+            | undefined,
         } as FrameNode
       case 'rect':
       case 'ellipse':
@@ -1246,6 +1250,10 @@ export function createSceneAPI(doc: Y.Doc = new Y.Doc()): SceneAPI {
             const deviceMockupKind = (props as Partial<FrameNode>)?.deviceMockupKind
             if (deviceMockupKind !== undefined) {
               y.set('deviceMockupKind', deviceMockupKind)
+            }
+            const perspectiveTemplate = (props as Partial<FrameNode>)?.perspectiveTemplate
+            if (perspectiveTemplate !== undefined) {
+              y.set('perspectiveTemplate', perspectiveTemplate)
             }
           } else {
             const cp = props as Partial<import('@/scene/types').ComponentNode> | undefined

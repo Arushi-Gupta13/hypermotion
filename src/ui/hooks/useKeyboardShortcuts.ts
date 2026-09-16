@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react'
 import * as Y from 'yjs'
 import { UNDOABLE_GESTURE_ORIGIN } from '@/scene/undo'
+import { uniqueNodeName } from '@/scene/uniqueNodeName'
 import {
   effectIdFromBlurPropertyId,
   effectStableId,
@@ -975,7 +976,7 @@ function createKeyboardCameraCutId(): string {
  *
  * Returns the new root-of-duplicated-subtree id.
  */
-function duplicateNode(
+export function duplicateNode(
   api: ReturnType<typeof useSceneAPI>,
   id: NodeId,
 ): NodeId | null {
@@ -1012,6 +1013,11 @@ function duplicateNode(
   }
 
   const newId = cloneSubtree(original, original.parent)
+  // Only the duplicated subtree's own root gets a numbered name (Star,
+  // Star 2, Star 3, …) — descendants keep the "<name> copy" suffix from
+  // cloneSubtree above so a duplicated group's children still read as
+  // "the copy of X", not as bare unrelated numbers.
+  api.setNodeProperty(newId, 'name', uniqueNodeName(api, original.name))
   const copy = api.getNode(newId)
   if (copy) {
     // Only nudge the transform when the parent is 'none' (free canvas).
@@ -1138,7 +1144,7 @@ function claimSystemClipboard(kind: InternalWorkspaceClipboardKind): void {
   }
 }
 
-function serializeSubtree(
+export function serializeSubtree(
   api: ReturnType<typeof useSceneAPI>,
   nodeId: NodeId,
 ): ClipboardNode | null {
@@ -1167,7 +1173,7 @@ function serializeSubtree(
   }
 }
 
-function pasteClipboardItem(
+export function pasteClipboardItem(
   api: ReturnType<typeof useSceneAPI>,
   item: ClipboardNode,
   parentId: NodeId | null,
@@ -1175,7 +1181,15 @@ function pasteClipboardItem(
   if (item.componentId) {
     return instantiateComponent(api, item.componentId, parentId)
   }
-  return pasteSubtree(api, item, parentId)
+  const newId = pasteSubtree(api, item, parentId)
+  // Only the pasted subtree's own root gets renamed — pasteSubtree's
+  // recursive children keep their original names (a paste, unlike
+  // Cmd+D, isn't visually adjacent to a sibling with the same name
+  // until it lands, so the collision only matters at the top level).
+  if (newId) {
+    api.setNodeProperty(newId, 'name', uniqueNodeName(api, item.data.name as string))
+  }
+  return newId
 }
 
 /**

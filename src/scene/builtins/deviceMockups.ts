@@ -4,6 +4,7 @@ import type { SceneAPI } from '@/scene/doc'
 import type { NodeId, VectorDocument, VectorItem, VectorPaint } from '@/scene/types'
 import { createVectorItem, solidVectorPaint } from '@/scene/vector/model'
 import { VectorPathBuilder } from '@/scene/vector/path'
+import { uniqueNodeName } from '@/scene/uniqueNodeName'
 
 /**
  * Device mockup presets — a static bezel (vector-drawn, not an image asset)
@@ -395,22 +396,6 @@ function topChromeVectorDocument(spec: DeviceMockupSpec): VectorDocument | null 
   return null
 }
 
-/**
- * "iPhone 15 Pro Mockup", then "iPhone 15 Pro Mockup 2", "…3", etc. —
- * scans every existing node name in the doc (not just siblings) since
- * mockups can be dragged to a different parent later and the numbering
- * should still read as sane at the document level, matching how most
- * design tools dedupe inserted-object names.
- */
-function uniqueMockupName(api: SceneAPI, baseName: string): string {
-  const existing = new Set(
-    api.getAllNodeIds().map((id) => api.getNode(id)?.name),
-  )
-  if (!existing.has(baseName)) return baseName
-  let n = 2
-  while (existing.has(`${baseName} ${n}`)) n += 1
-  return `${baseName} ${n}`
-}
 
 const EMPTY_APPEARANCE = {
   opacity: 1,
@@ -447,7 +432,7 @@ export function insertDeviceMockup(
   const spec = DEVICE_MOCKUP_SPECS[kind]
   let outerId = ''
   api.doc.transact(() => {
-    const name = uniqueMockupName(api, `${spec.label} Mockup`)
+    const name = uniqueNodeName(api, `${spec.label} Mockup`)
     outerId = api.createNode('frame', parentId, {
       name,
       // Without this the frame defaults to 'flow' layout participation —

@@ -172,6 +172,57 @@ describe('animation presets', () => {
     expect(api.getTracksForNode(childId)).toHaveLength(0)
   })
 
+  it('authors Flow In as a 3-stop arced path, not a straight 2-stop slide', () => {
+    const api = createSceneAPI()
+    const nodeId = api.createNode('frame', null)
+
+    applyPreset(api, nodeId, 'flow-in', 0)
+
+    const xTrack = api
+      .getTracksForNode(nodeId)
+      .find((t) => t.propertyId === 'transform.x')
+    const rotTrack = api
+      .getTracksForNode(nodeId)
+      .find((t) => t.propertyId === 'transform.rotation')
+    expect(xTrack?.keyframes).toHaveLength(3)
+    expect(rotTrack?.keyframes).toHaveLength(3)
+    // The path curves rather than moving monotonically toward 0.
+    const xs = xTrack!.keyframes.map((k) => k.value as number)
+    expect(xs[0]).toBeLessThan(xs[1]!)
+    expect(xs[1]).toBeLessThan(xs[2]!)
+  })
+
+  it('authors Wipe In as a left-anchored scaleX reveal with opacity untouched', () => {
+    const api = createSceneAPI()
+    const nodeId = api.createNode('rect', null)
+
+    applyPreset(api, nodeId, 'wipe-in-left', 0)
+
+    expect(api.getNode(nodeId)?.transform.anchorX).toBe(0)
+    const scaleTrack = api
+      .getTracksForNode(nodeId)
+      .find((t) => t.propertyId === 'transform.scaleX')
+    expect(scaleTrack?.keyframes.map((k) => k.value)).toEqual([0, 1])
+    expect(
+      api.getTracksForNode(nodeId).some((t) => t.propertyId === 'appearance.opacity'),
+    ).toBe(false)
+  })
+
+  it('authors Flip In 3D as a rotationY-only turn (no rotationX tilt)', () => {
+    const api = createSceneAPI()
+    const nodeId = api.createNode('frame', null)
+
+    applyPreset(api, nodeId, 'flip-in-3d', 0)
+
+    const rotY = api
+      .getTracksForNode(nodeId)
+      .find((t) => t.propertyId === 'transform.rotationY')
+    expect(rotY?.keyframes.map((k) => k.value)).toEqual([180, 0])
+    expect(
+      api.getTracksForNode(nodeId).some((t) => t.propertyId === 'transform.rotationX'),
+    ).toBe(false)
+  })
+
   it('gives every preset a category with a real label, and every showcase category both an In and Out entry', () => {
     for (const preset of PRESETS) {
       expect(ANIM_PRESET_CATEGORY_LABELS[preset.category]).toBeTruthy()

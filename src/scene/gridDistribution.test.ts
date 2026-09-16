@@ -73,6 +73,36 @@ describe('distributeTransforms', () => {
     }
   })
 
+  it('spaces a ring evenly in the XZ plane, all at the same height', () => {
+    const points = distributeTransforms(
+      { kind: 'ring', radius: 100, startAngle: 0, faceOutward: false },
+      4,
+    )
+    expect(points).toHaveLength(4)
+    // 0deg: +Z (toward viewer). 90deg/180/270 sweep around Y.
+    expect(points[0]).toMatchObject({ x: 0, z: 100, y: 0 })
+    expect(points[1]!.x).toBeCloseTo(100)
+    expect(points[1]!.z).toBeCloseTo(0)
+    expect(points[2]!.x).toBeCloseTo(0)
+    expect(points[2]!.z).toBeCloseTo(-100)
+    expect(points[3]!.x).toBeCloseTo(-100)
+    expect(points[3]!.z).toBeCloseTo(0)
+    for (const p of points) {
+      expect(p.y).toBe(0)
+      expect(Math.hypot(p.x, p.z)).toBeCloseTo(100)
+    }
+  })
+
+  it('rotates ring items to face outward around Y when faceOutward is set', () => {
+    const points = distributeTransforms(
+      { kind: 'ring', radius: 100, startAngle: 45, faceOutward: true },
+      1,
+    )
+    expect(points[0]!.rotationY).toBeCloseTo(45)
+    expect(points[0]!.rotation).toBe(0)
+    expect(points[0]!.rotationX).toBe(0)
+  })
+
   it('returns an empty array for zero items', () => {
     expect(distributeTransforms({ kind: 'spherical', radius: 10 }, 0)).toEqual([])
   })

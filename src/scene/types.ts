@@ -618,6 +618,27 @@ export interface FrameNode extends NodeBase {
    * other way around.
    */
   deviceMockupKind?: string
+  /**
+   * Set on a Perspective template's outer container at insertion time
+   * (see `insertPerspectiveTemplate` in
+   * `@/scene/builtins/perspectiveTemplates`). Lets the Inspector show
+   * live "Radius" / "Card roundness" / etc. controls that regenerate the
+   * whole arrangement as one editable asset — without this, adjusting
+   * the ring would mean selecting and hand-editing each of its slot
+   * children individually. Kept as a plain object (not imported types)
+   * for the same layering reason as `deviceMockupKind`.
+   */
+  perspectiveTemplate?: {
+    kind: string
+    radius: number
+    slotWidth: number
+    slotHeight: number
+    slotCornerRadius: number
+    slotCount: number
+    spinDuration: number
+    gridColumns: number
+    gridGap: number
+  }
 }
 
 export interface RectNode extends NodeBase {

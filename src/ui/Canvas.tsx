@@ -189,6 +189,7 @@ import {
   findDropTargetFrame,
   type DropTarget,
 } from '@/ui/dropTargetFrame'
+import { isPerspectiveTemplateSlot } from '@/scene/builtins/perspectiveTemplates'
 
 const MemoizedThreeSceneViewport = memo(ThreeSceneViewport)
 MemoizedThreeSceneViewport.displayName = 'MemoizedThreeSceneViewport'
@@ -2035,6 +2036,28 @@ export function Canvas() {
               (directSelect || selection.includes(independentHit.nodeId))
                 ? independentHit
                 : hit
+            // This is the actual click/drag path for WebGL-rendered
+            // content — the DOM-based useDragToMove hook is never
+            // reached for it (see the comment on `independentHit`
+            // above). A Perspective template's ring is meant to be
+            // edited as one asset via its container's params, not by
+            // hand-dragging a slot frame out of position — redirect the
+            // click to the container and skip selecting/arming a drag
+            // on the slot entirely.
+            const templateContainerId = isPerspectiveTemplateSlot(
+              api,
+              pointerHit.nodeId,
+            )
+            if (templateContainerId) {
+              if (e.shiftKey) {
+                useUI.getState().toggleInSelection(templateContainerId, true)
+              } else {
+                setSelection([templateContainerId])
+              }
+              e.preventDefault()
+              e.stopPropagation()
+              return
+            }
             if (isDoublePress) {
               const hitNode = api.getNode(pointerHit.nodeId)
               if (hitNode?.kind === 'text') {
@@ -2970,13 +2993,35 @@ export function Canvas() {
         : clientToCanvas(e.clientX, e.clientY) ?? undefined
 
       // If the drop lands inside a nested frame (e.g. a device mockup's
-      // Screen), parent the new content there instead of always at the
-      // artboard root — otherwise it's a root-level sibling that happens
-      // to overlap the frame on screen today, but doesn't move with it.
+      // Screen, or a Perspective template's ring of tilted slots), parent
+      // the new content there instead of always at the artboard root —
+      // otherwise it's a root-level sibling that happens to overlap the
+      // frame on screen today, but doesn't move with it.
+      //
+      // Try a real 3D raycast against the rendered scene first — it
+      // accounts for rotation, depth, and camera projection, unlike the
+      // geometry-only fallback below (which deliberately ignores
+      // rotation; see dropTargetFrame.ts). That gap is exactly why
+      // dropping onto a Perspective template's ring slots — each one
+      // rotated and offset in Z — could miss or land on the wrong slot:
+      // its true on-screen position can differ a lot from its raw
+      // transform.x/y. The raycast hit may land on a non-frame leaf
+      // (an image/vector already filling a slot); walk up to the
+      // nearest frame ancestor in that case.
+      const raycastHit = !workspaceOnly ? hitTestCanvas3D(e.clientX, e.clientY) : null
+      let raycastFrame: SceneNode | null = raycastHit ? api.getNode(raycastHit.nodeId) : null
+      while (raycastFrame && raycastFrame.kind !== 'frame') {
+        raycastFrame = raycastFrame.parent ? api.getNode(raycastFrame.parent) : null
+      }
       const dropTarget =
-        !workspaceOnly && rootId && dropPos && solved
-          ? findDropTargetFrame(api, solved, inherited, rootId, dropPos)
-          : null
+        raycastFrame && raycastFrame.visible && !raycastFrame.locked
+          ? {
+              parentId: raycastFrame.id,
+              local: { x: raycastHit!.localX, y: raycastHit!.localY },
+            }
+          : !workspaceOnly && rootId && dropPos && solved
+            ? findDropTargetFrame(api, solved, inherited, rootId, dropPos)
+            : null
       const dropParentId = dropTarget?.parentId ?? (workspaceOnly ? null : rootId)
       const dropLocal = dropTarget?.local ?? dropPos
 
@@ -3038,6 +3083,7 @@ export function Canvas() {
       clientToCanvas,
       clientToViewport,
       isInsideArtboard,
+      hitTestCanvas3D,
       setSelection,
       setTool,
     ],
