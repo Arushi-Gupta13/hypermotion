@@ -39,11 +39,13 @@ export {
 } from './tracks'
 export {
   PRESETS,
+  ANIM_PRESET_CATEGORY_LABELS,
   applyPreset,
   planLayerPresetTargets,
   planTextPresetTargets,
   planTextStaggerStartTimes,
   type AnimPresetId,
+  type AnimPresetCategory,
   type LayerPresetTargetPlan,
   type TextPresetTargetPlan,
 } from './presets'

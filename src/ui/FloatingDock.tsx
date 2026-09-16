@@ -8,10 +8,12 @@ import {
   ImageIcon,
   MousePointer2,
   MousePointerClick,
+  Redo2,
   Smartphone,
   Sparkles,
   Square,
   Type,
+  Undo2,
   Video,
 } from 'lucide-react'
 import { useUI, type Tool } from '@/state/ui'
@@ -72,6 +74,10 @@ export function FloatingDock() {
   const tool = useUI((s) => s.tool)
   const setTool = useUI((s) => s.setTool)
   const setSelection = useUI((s) => s.setSelection)
+  const canUndo = useUI((s) => s.canUndo)
+  const canRedo = useUI((s) => s.canRedo)
+  const undo = useUI((s) => s.undo)
+  const redo = useUI((s) => s.redo)
   const api = useSceneAPI()
 
   const imageInputRef = useRef<HTMLInputElement>(null)
@@ -207,6 +213,33 @@ export function FloatingDock() {
         'shadow-[var(--shadow-dock)]',
       ].join(' ')}
     >
+      {/* Undo/redo — always visible regardless of tool mode or selection,
+          unlike the same pair also surfaced in the Layer animation panel
+          (which only shows once a layer is selected). Both read/write the
+          same Y.UndoManager via useUI's undo/redo mirror, so either
+          location undoes the exact same history. */}
+      <button
+        type="button"
+        title="Undo"
+        aria-label="Undo"
+        onClick={undo}
+        disabled={!canUndo}
+        className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-control)] text-text-muted transition-colors hover:bg-control hover:text-text disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-muted"
+      >
+        <Undo2 size={18} />
+      </button>
+      <button
+        type="button"
+        title="Redo"
+        aria-label="Redo"
+        onClick={redo}
+        disabled={!canRedo}
+        className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-control)] text-text-muted transition-colors hover:bg-control hover:text-text disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-muted"
+      >
+        <Redo2 size={18} />
+      </button>
+      <span aria-hidden className="mx-1 h-[22px] w-px bg-border" />
+
       {TOOLS.map((t, i) => {
         const renderSeparator = GROUP_BOUNDARIES.includes(i)
         const active = tool === t.id

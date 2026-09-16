@@ -209,6 +209,19 @@ interface UIState {
   cameraViewByComposition: Record<string, CameraView>
   playhead: number
   playing: boolean
+  /**
+   * The scene's real undo/redo capability — the Y.UndoManager instance
+   * itself lives in useKeyboardShortcuts.ts (it needs to mount exactly
+   * once and must not be rebuilt on every render); this is just a thin,
+   * reactive mirror so any UI (a toolbar button, the Applied-tracks
+   * list) can trigger or reflect it without reaching into that hook.
+   * `undo`/`redo` default to no-ops and `canUndo`/`canRedo` to false
+   * until the keyboard-shortcuts hook mounts and wires the real ones in.
+   */
+  canUndo: boolean
+  canRedo: boolean
+  undo: () => void
+  redo: () => void
   inspectorMode: InspectorMode
   view: WorkspaceView
   componentEditId: string | null
@@ -364,6 +377,14 @@ interface UIState {
   togglePanel: (key: PanelKey) => void
   setPlayhead: (t: number) => void
   setPlaying: (p: boolean) => void
+  setUndoRedoCapability: (
+    patch: Partial<{
+      canUndo: boolean
+      canRedo: boolean
+      undo: () => void
+      redo: () => void
+    }>,
+  ) => void
   setInspectorMode: (mode: InspectorMode) => void
   setView: (patch: Partial<WorkspaceView>) => void
   setComponentEditId: (id: string | null) => void
@@ -559,6 +580,10 @@ export const useUI = create<UIState>((set) => ({
   cameraViewByComposition: {},
   playhead: 0,
   playing: false,
+  canUndo: false,
+  canRedo: false,
+  undo: () => {},
+  redo: () => {},
   inspectorMode: 'properties',
   view: { zoom: 1, panX: 0, panY: 0 },
   componentEditId: null,
@@ -714,6 +739,7 @@ export const useUI = create<UIState>((set) => ({
     set((s) => ({ panels: { ...s.panels, [key]: !s.panels[key] } })),
   setPlayhead: (t) => set({ playhead: t }),
   setPlaying: (p) => set({ playing: p }),
+  setUndoRedoCapability: (patch) => set(patch),
   setInspectorMode: (mode) => set({ inspectorMode: mode }),
   setView: (patch) => set((s) => ({ view: { ...s.view, ...patch } })),
   setComponentEditId: (id) =>

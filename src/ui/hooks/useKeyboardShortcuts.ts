@@ -135,10 +135,46 @@ export function useKeyboardShortcuts() {
     }
     api.doc.on('afterTransaction', closeGestureCapture)
     undoManagerRef.current = mgr
+
+    // Mirror this manager's capability into the shared UI store so any
+    // component (a toolbar button, the Applied-tracks list) can trigger
+    // undo/redo or show whether either is available, without reaching
+    // into this hook or creating a second, competing UndoManager.
+    const syncCapability = () =>
+      useUI.getState().setUndoRedoCapability({
+        canUndo: mgr.undoStack.length > 0,
+        canRedo: mgr.redoStack.length > 0,
+      })
+    useUI.getState().setUndoRedoCapability({
+      undo: () => mgr.undo(),
+      redo: () => mgr.redo(),
+    })
+    syncCapability()
+    mgr.on('stack-item-added', syncCapability)
+    mgr.on('stack-item-popped', syncCapability)
+    // Any edit within captureTimeout (500ms) of the previous tracked one
+    // merges into that SAME stack item instead of pushing a new one —
+    // Y.UndoManager fires 'stack-item-updated' for that merge, not
+    // 'stack-item-added'. Missing this meant a real edit could land (the
+    // stack genuinely had an item) while canUndo silently stayed false,
+    // because almost every real interaction follows some other tracked
+    // mutation (selecting, a previous edit in the same gesture) within
+    // that window. Verified via src/ui/hooks/undoCapability.test.ts.
+    mgr.on('stack-item-updated', syncCapability)
+
     return () => {
       api.doc.off('afterTransaction', closeGestureCapture)
+      mgr.off('stack-item-added', syncCapability)
+      mgr.off('stack-item-popped', syncCapability)
+      mgr.off('stack-item-updated', syncCapability)
       mgr.destroy()
       undoManagerRef.current = null
+      useUI.getState().setUndoRedoCapability({
+        canUndo: false,
+        canRedo: false,
+        undo: () => {},
+        redo: () => {},
+      })
     }
   }, [api])
 

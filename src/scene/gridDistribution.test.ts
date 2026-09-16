@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from 'vitest'
+import * as Y from 'yjs'
 import { createSceneAPI } from '@/scene/doc'
+import { UNDOABLE_GESTURE_ORIGIN } from '@/scene/undo'
 import { applyGridDistribution, distributeTransforms } from './gridDistribution'
 
 describe('distributeTransforms', () => {
@@ -112,5 +114,42 @@ describe('applyGridDistribution', () => {
     }
     expect(Math.hypot(smallCenter.x - centroid.x, smallCenter.y - centroid.y)).toBeCloseTo(300)
     expect(Math.hypot(largeCenter.x - centroid.x, largeCenter.y - centroid.y)).toBeCloseTo(300)
+  })
+
+  it('rapid successive calls (one per slider-drag tick) merge into a single undo step', () => {
+    // The Inspector's Arrange panel calls applyGridDistribution on every
+    // param tweak, including every tick of a live slider drag. If this
+    // function tagged its transaction UNDOABLE_GESTURE_ORIGIN, each tick
+    // would forcibly become its own separate, non-mergeable undo entry
+    // (see useKeyboardShortcuts.ts and Y.UndoManager.stopCapturing) — a
+    // two-second drag would need dozens of Undo clicks to fully revert.
+    // Using the default origin lets Yjs's own 500ms captureTimeout
+    // coalesce them into one, matching every other drag gesture in the
+    // app.
+    const api = createSceneAPI()
+    const scene = api.doc.getMap('scene')
+    const nodesMap = scene.get('nodes') as Y.Map<unknown>
+    const mgr = new Y.UndoManager([nodesMap as unknown as Y.AbstractType<unknown>, scene as unknown as Y.AbstractType<unknown>], {
+      captureTimeout: 500,
+      trackedOrigins: new Set([null, UNDOABLE_GESTURE_ORIGIN]),
+    })
+    // Node creation itself lands on the undo stack too (correctly merged
+    // with the second createNode call, since both happen in the same
+    // tick) — reset the clock and snapshot the stack depth *after*
+    // that, so the assertion below isolates just the drag-tick calls.
+    const a = api.createNode('rect', null)
+    const b = api.createNode('rect', null)
+    mgr.lastChange = 0
+    const stackDepthBeforeDrag = mgr.undoStack.length
+
+    for (let i = 0; i < 10; i++) {
+      applyGridDistribution(
+        api,
+        [a, b],
+        { kind: 'radial', radius: 100 + i, startAngle: 0, sweep: 360, faceOutward: false },
+      )
+    }
+
+    expect(mgr.undoStack.length).toBe(stackDepthBeforeDrag + 1)
   })
 })

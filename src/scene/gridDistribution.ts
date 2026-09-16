@@ -2,7 +2,6 @@
 
 import type { SceneAPI } from '@/scene/doc'
 import type { Node, NodeId } from '@/scene/types'
-import { UNDOABLE_GESTURE_ORIGIN } from '@/scene/undo'
 
 /**
  * "Arrange" — a one-shot distribute action offering Radial / Path /
@@ -236,5 +235,17 @@ export function applyGridDistribution(
         rotationY: t.rotationY,
       })
     })
-  }, UNDOABLE_GESTURE_ORIGIN)
+    // Deliberately NOT tagged UNDOABLE_GESTURE_ORIGIN. The Inspector calls
+    // this on every param tweak, including every tick of a slider drag
+    // (NumberField falls back to firing onCommit continuously while
+    // scrubbing) — UNDOABLE_GESTURE_ORIGIN's whole contract is "one call
+    // = one complete gesture, keep it as its own undo step even if it
+    // lands within Yjs's merge window," which is correct for a single
+    // drag-release commit but turns EVERY tick of a live-applying slider
+    // into its own separate, forced-non-mergeable undo entry — a two-
+    // second radius drag became dozens of undo steps. The default (null)
+    // origin is still tracked (see useKeyboardShortcuts.ts's
+    // trackedOrigins) and lets Yjs's own 500ms captureTimeout do what
+    // it's designed for: coalesce rapid consecutive edits into one step.
+  })
 }

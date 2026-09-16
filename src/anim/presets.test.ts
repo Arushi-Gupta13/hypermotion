@@ -3,6 +3,8 @@
 import { describe, expect, it } from 'vitest'
 import { createSceneAPI } from '@/scene/doc'
 import {
+  ANIM_PRESET_CATEGORY_LABELS,
+  PRESETS,
   applyPreset,
   planLayerPresetTargets,
   planTextPresetTargets,
@@ -168,5 +170,24 @@ describe('animation presets', () => {
 
     expect(api.getTracksForNode(parentId)).toHaveLength(1)
     expect(api.getTracksForNode(childId)).toHaveLength(0)
+  })
+
+  it('gives every preset a category with a real label, and every showcase category both an In and Out entry', () => {
+    for (const preset of PRESETS) {
+      expect(ANIM_PRESET_CATEGORY_LABELS[preset.category]).toBeTruthy()
+    }
+    const showcaseCategories = new Set(
+      PRESETS.filter((p) => p.category !== 'basic').map((p) => p.category),
+    )
+    for (const category of showcaseCategories) {
+      const inCount = PRESETS.filter(
+        (p) => p.category === category && p.direction === 'in',
+      ).length
+      const outCount = PRESETS.filter(
+        (p) => p.category === category && p.direction === 'out',
+      ).length
+      expect(inCount).toBeGreaterThan(0)
+      expect(outCount).toBeGreaterThan(0)
+    }
   })
 })

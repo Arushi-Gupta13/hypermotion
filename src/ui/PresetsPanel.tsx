@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useState, type CSSProperties, type ReactNode } from 'react'
+import { Redo2, Undo2 } from 'lucide-react'
 import { useUI } from '@/state/ui'
 import { PROPERTIES, useSceneAPI, useSceneVersion } from '@/scene'
 import type { EasingKind, Fill, NodeId, Track } from '@/scene'
@@ -8,6 +9,7 @@ import type { SceneAPI } from '@/scene/doc'
 import { UNDOABLE_GESTURE_ORIGIN } from '@/scene/undo'
 import {
   PRESETS,
+  ANIM_PRESET_CATEGORY_LABELS,
   applyPreset,
   listTracksForNode,
   removeTrack,
@@ -34,6 +36,7 @@ import {
 } from '@/anim'
 import type {
   AnimPresetId,
+  AnimPresetCategory,
   EasingPresetId,
   EasingSelectionSummary,
   TextAnimationApplyTo,
@@ -144,8 +147,13 @@ export function PresetsPanel() {
   const setStaggerDelay = useUI((s) => s.setStaggerDelay)
   const activeStaggerSetId = useUI((s) => s.activeStaggerSetId)
   const selectedStaggerSetId = useUI((s) => s.selectedStaggerSetId)
+  const canUndo = useUI((s) => s.canUndo)
+  const canRedo = useUI((s) => s.canRedo)
+  const undo = useUI((s) => s.undo)
+  const redo = useUI((s) => s.redo)
   const [showLayerOptions, setShowLayerOptions] = useState(false)
   const [layerPresetTab, setLayerPresetTab] = useState<'in' | 'out'>('in')
+  const [layerPresetCategory, setLayerPresetCategory] = useState<AnimPresetCategory | 'all'>('all')
   const [openSectionState, setOpenSectionState] = useState({
     selectionKey: '',
     sections: {
@@ -375,7 +383,17 @@ export function PresetsPanel() {
 
   const ins = PRESETS.filter((p) => p.direction === 'in')
   const outs = PRESETS.filter((p) => p.direction === 'out')
-  const visibleLayerPresets = layerPresetTab === 'in' ? ins : outs
+  const directionLayerPresets = layerPresetTab === 'in' ? ins : outs
+  const visibleLayerPresets =
+    layerPresetCategory === 'all'
+      ? directionLayerPresets
+      : directionLayerPresets.filter((p) => p.category === layerPresetCategory)
+  // Discovery order follows PRESETS' own order (basic first, then the
+  // showcase categories in the order they were added) — no separate sort
+  // needed to keep the chip row stable across renders.
+  const presetCategories = Array.from(
+    new Set(PRESETS.map((p) => p.category)),
+  )
   const primaryTextNode = selectedTextNodes[0]
   const primaryTextTrack = primaryTextNode
     ? findTextAnimationTrack(api, primaryTextNode.id, trackFilter, playhead)
@@ -412,6 +430,26 @@ export function PresetsPanel() {
           </div>
           <button
             type="button"
+            onClick={undo}
+            disabled={!canUndo}
+            aria-label="Undo"
+            title="Undo"
+            className="grid h-7 w-7 shrink-0 place-items-center rounded bg-panel text-text-muted hover:text-text disabled:opacity-40 disabled:hover:text-text-muted"
+          >
+            <Undo2 size={14} />
+          </button>
+          <button
+            type="button"
+            onClick={redo}
+            disabled={!canRedo}
+            aria-label="Redo"
+            title="Redo"
+            className="grid h-7 w-7 shrink-0 place-items-center rounded bg-panel text-text-muted hover:text-text disabled:opacity-40 disabled:hover:text-text-muted"
+          >
+            <Redo2 size={14} />
+          </button>
+          <button
+            type="button"
             onClick={() => setShowLayerOptions((v) => !v)}
             className={[
               'rounded px-2.5 py-1.5 text-[11px] font-semibold',
@@ -443,6 +481,11 @@ export function PresetsPanel() {
         onChange={setLayerPresetTab}
         inCount={ins.length}
         outCount={outs.length}
+      />
+      <PresetCategoryChips
+        categories={presetCategories}
+        value={layerPresetCategory}
+        onChange={setLayerPresetCategory}
       />
       <PresetGrid presets={visibleLayerPresets} onPick={stampPreset} />
 
@@ -2690,6 +2733,46 @@ function PresetTabs({
         </button>
       ))}
     </SquircleSurface>
+  )
+}
+
+/**
+ * Horizontally-scrollable category filter for the preset grid — lets the
+ * showcase presets (3D & Perspective, Orbit, Spotlight & Focus, Stack &
+ * Scatter, Isometric) read as a browsable gallery instead of one long
+ * undifferentiated list mixed in with the basic Fade/Slide/Scale set.
+ */
+function PresetCategoryChips({
+  categories,
+  value,
+  onChange,
+}: {
+  categories: AnimPresetCategory[]
+  value: AnimPresetCategory | 'all'
+  onChange: (next: AnimPresetCategory | 'all') => void
+}) {
+  const options: Array<AnimPresetCategory | 'all'> = ['all', ...categories]
+  return (
+    <div
+      className="flex gap-1.5 overflow-x-auto pb-0.5"
+      style={{ scrollbarWidth: 'none' }}
+    >
+      {options.map((id) => (
+        <button
+          key={id}
+          type="button"
+          onClick={() => onChange(id)}
+          aria-pressed={value === id}
+          data-active={value === id}
+          className={[
+            'hm-control-surface h-6 shrink-0 whitespace-nowrap rounded-full px-2.5 text-[10px] font-medium',
+            value === id ? 'bg-accent/16 text-accent' : 'text-text-muted hover:text-text',
+          ].join(' ')}
+        >
+          {id === 'all' ? 'All' : ANIM_PRESET_CATEGORY_LABELS[id]}
+        </button>
+      ))}
+    </div>
   )
 }
 

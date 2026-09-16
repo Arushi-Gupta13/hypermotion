@@ -55,10 +55,28 @@ export type AnimPresetId =
   | 'isometric-in'
   | 'isometric-out'
 
+export type AnimPresetCategory =
+  | 'basic'
+  | '3d-perspective'
+  | 'orbit'
+  | 'spotlight-focus'
+  | 'stack-scatter'
+  | 'isometric'
+
+export const ANIM_PRESET_CATEGORY_LABELS: Record<AnimPresetCategory, string> = {
+  basic: 'Basic',
+  '3d-perspective': '3D & Perspective',
+  orbit: 'Orbit',
+  'spotlight-focus': 'Spotlight & Focus',
+  'stack-scatter': 'Stack & Scatter',
+  isometric: 'Isometric',
+}
+
 export interface AnimPreset {
   id: AnimPresetId
   label: string
   direction: 'in' | 'out'
+  category: AnimPresetCategory
   /** Default duration in seconds. */
   duration: number
   easing: EasingKind
@@ -168,29 +186,29 @@ export function planTextStaggerStartTimes(
 }
 
 export const PRESETS: AnimPreset[] = [
-  { id: 'fade-in', label: 'Fade In', direction: 'in', duration: 0.4, easing: 'ease-out' },
-  { id: 'fade-out', label: 'Fade Out', direction: 'out', duration: 0.4, easing: 'ease-in' },
-  { id: 'slide-in-up', label: 'Slide Up', direction: 'in', duration: 0.5, easing: 'ease-out' },
-  { id: 'slide-in-down', label: 'Slide Down', direction: 'in', duration: 0.5, easing: 'ease-out' },
-  { id: 'slide-in-left', label: 'Slide Left', direction: 'in', duration: 0.5, easing: 'ease-out' },
-  { id: 'slide-in-right', label: 'Slide Right', direction: 'in', duration: 0.5, easing: 'ease-out' },
-  { id: 'slide-out-up', label: 'Slide Up (out)', direction: 'out', duration: 0.5, easing: 'ease-in' },
-  { id: 'slide-out-down', label: 'Slide Down (out)', direction: 'out', duration: 0.5, easing: 'ease-in' },
-  { id: 'slide-out-left', label: 'Slide Left (out)', direction: 'out', duration: 0.5, easing: 'ease-in' },
-  { id: 'slide-out-right', label: 'Slide Right (out)', direction: 'out', duration: 0.5, easing: 'ease-in' },
-  { id: 'scale-in', label: 'Scale In', direction: 'in', duration: 0.4, easing: 'ease-out' },
-  { id: 'scale-out', label: 'Scale Out', direction: 'out', duration: 0.4, easing: 'ease-in' },
-  { id: 'pop', label: 'Pop', direction: 'in', duration: 0.5, easing: { bezier: [0.34, 1.56, 0.64, 1] } },
-  { id: 'tilt-in-3d', label: 'Tilt In 3D', direction: 'in', duration: 0.6, easing: 'ease-out' },
-  { id: 'tilt-out-3d', label: 'Tilt Out 3D', direction: 'out', duration: 0.6, easing: 'ease-in' },
-  { id: 'spin-in', label: 'Spin In', direction: 'in', duration: 0.6, easing: 'ease-out' },
-  { id: 'spin-out', label: 'Spin Out', direction: 'out', duration: 0.6, easing: 'ease-in' },
-  { id: 'focus-in', label: 'Focus In', direction: 'in', duration: 0.5, easing: 'ease-out' },
-  { id: 'focus-out', label: 'Focus Out', direction: 'out', duration: 0.5, easing: 'ease-in' },
-  { id: 'scatter-in', label: 'Scatter In', direction: 'in', duration: 0.55, easing: { bezier: [0.34, 1.2, 0.64, 1] } },
-  { id: 'scatter-out', label: 'Scatter Out', direction: 'out', duration: 0.55, easing: 'ease-in' },
-  { id: 'isometric-in', label: 'Isometric In', direction: 'in', duration: 0.6, easing: 'ease-out' },
-  { id: 'isometric-out', label: 'Isometric Out', direction: 'out', duration: 0.6, easing: 'ease-in' },
+  { id: 'fade-in', label: 'Fade In', direction: 'in', category: 'basic', duration: 0.4, easing: 'ease-out' },
+  { id: 'fade-out', label: 'Fade Out', direction: 'out', category: 'basic', duration: 0.4, easing: 'ease-in' },
+  { id: 'slide-in-up', label: 'Slide Up', direction: 'in', category: 'basic', duration: 0.5, easing: 'ease-out' },
+  { id: 'slide-in-down', label: 'Slide Down', direction: 'in', category: 'basic', duration: 0.5, easing: 'ease-out' },
+  { id: 'slide-in-left', label: 'Slide Left', direction: 'in', category: 'basic', duration: 0.5, easing: 'ease-out' },
+  { id: 'slide-in-right', label: 'Slide Right', direction: 'in', category: 'basic', duration: 0.5, easing: 'ease-out' },
+  { id: 'slide-out-up', label: 'Slide Up (out)', direction: 'out', category: 'basic', duration: 0.5, easing: 'ease-in' },
+  { id: 'slide-out-down', label: 'Slide Down (out)', direction: 'out', category: 'basic', duration: 0.5, easing: 'ease-in' },
+  { id: 'slide-out-left', label: 'Slide Left (out)', direction: 'out', category: 'basic', duration: 0.5, easing: 'ease-in' },
+  { id: 'slide-out-right', label: 'Slide Right (out)', direction: 'out', category: 'basic', duration: 0.5, easing: 'ease-in' },
+  { id: 'scale-in', label: 'Scale In', direction: 'in', category: 'basic', duration: 0.4, easing: 'ease-out' },
+  { id: 'scale-out', label: 'Scale Out', direction: 'out', category: 'basic', duration: 0.4, easing: 'ease-in' },
+  { id: 'pop', label: 'Pop', direction: 'in', category: 'basic', duration: 0.5, easing: { bezier: [0.34, 1.56, 0.64, 1] } },
+  { id: 'tilt-in-3d', label: 'Tilt In 3D', direction: 'in', category: '3d-perspective', duration: 0.6, easing: 'ease-out' },
+  { id: 'tilt-out-3d', label: 'Tilt Out 3D', direction: 'out', category: '3d-perspective', duration: 0.6, easing: 'ease-in' },
+  { id: 'spin-in', label: 'Spin In', direction: 'in', category: 'orbit', duration: 0.6, easing: 'ease-out' },
+  { id: 'spin-out', label: 'Spin Out', direction: 'out', category: 'orbit', duration: 0.6, easing: 'ease-in' },
+  { id: 'focus-in', label: 'Focus In', direction: 'in', category: 'spotlight-focus', duration: 0.5, easing: 'ease-out' },
+  { id: 'focus-out', label: 'Focus Out', direction: 'out', category: 'spotlight-focus', duration: 0.5, easing: 'ease-in' },
+  { id: 'scatter-in', label: 'Scatter In', direction: 'in', category: 'stack-scatter', duration: 0.55, easing: { bezier: [0.34, 1.2, 0.64, 1] } },
+  { id: 'scatter-out', label: 'Scatter Out', direction: 'out', category: 'stack-scatter', duration: 0.55, easing: 'ease-in' },
+  { id: 'isometric-in', label: 'Isometric In', direction: 'in', category: 'isometric', duration: 0.6, easing: 'ease-out' },
+  { id: 'isometric-out', label: 'Isometric Out', direction: 'out', category: 'isometric', duration: 0.6, easing: 'ease-in' },
 ]
 
 /** Deterministic small hash so "Scatter" spreads each layer differently but repeatably. */
