@@ -1,3 +1,4 @@
+import { MediaAssetImports } from './mediaAssetImports'
 // SPDX-License-Identifier: Apache-2.0
 
 /**
@@ -21,6 +22,7 @@ import {
   desktopCapturer,
   dialog,
   ipcMain,
+  protocol,
   Menu,
   Notification,
   shell,
@@ -29,9 +31,11 @@ import {
   type Rectangle,
   type MenuItemConstructorOptions,
 } from 'electron'
+import { MediaStore } from './mediaStore'
 import path from 'node:path'
 import fs from 'node:fs'
 import os from 'node:os'
+import { MediaAssets, serveMediaAsset } from './mediaAssets'
 import { spawn, spawnSync } from 'node:child_process'
 import {
   prepareFigmaPlugin,
@@ -39,6 +43,7 @@ import {
 } from './figmaPlugin'
 import { isRenderWindowLeaseStale } from './renderWindowLease'
 import { resolveExportDestinationPath } from './exportDestination'
+import { videoNormalizationArgs } from './videoNormalization'
 import {
   detectNativeBitmapMetadata,
   expectedBitmapByteLength,
@@ -48,10 +53,23 @@ import {
   type NativeBitmapPixelFormat,
 } from './captureBitmap'
 
+
 // Hyper Motion is a desktop editor: pressing Play in our own timeline should
 // always be allowed to start timeline audio, even if React applies the state
 // change just after Chromium's narrow "user gesture" window.
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
+
+const mediaImports = new MediaAssetImports(path.join(app.getPath('userData'), 'media-assets'))
+const mediaStore = new MediaStore(mediaImports.directory)
+const mediaAssets = new MediaAssets(mediaImports.directory, path.join(app.getPath('userData'), 'media'))
+ipcMain.handle('media:begin-import', (event, payload: { mime: string; size: number }) => mediaImports.begin(event.sender.id, payload.mime, payload.size))
+ipcMain.handle('media:append-import', (event, payload: { id: string; base64: string }) => mediaImports.append(event.sender.id, payload.id, payload.base64))
+ipcMain.handle('media:finish-import', (event, id: string) => mediaImports.finish(event.sender.id, id))
+ipcMain.handle('media:cancel-import', (event, id: string) => mediaImports.cancel(event.sender.id, id))
+protocol.registerSchemesAsPrivileged([{
+  scheme: 'hm-media',
+  privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true },
+}])
 
 /**
  * Single-instance lock.
@@ -782,21 +800,57 @@ ipcMain.handle('clipboard:readText', () => clipboard.readText())
 ipcMain.handle('clipboard:writeText', (_e, text: string) => {
   clipboard.writeText(text)
 })
-ipcMain.handle('clipboard:readFiles', () => {
-  const paths = readClipboardFilePaths()
-  return paths
-    .filter((filePath) => {
-      try {
-        return fs.statSync(filePath).isFile() && mimeForClipboardFile(filePath) !== ''
-      } catch {
-        return false
-      }
-    })
-    .map((filePath) => ({
-      name: path.basename(filePath),
-      type: mimeForClipboardFile(filePath),
-      bytes: fs.readFileSync(filePath),
-    }))
+ipcMain.handle('clipboard:readFiles', async () => {
+  const files = []
+  for (const filePath of readClipboardFilePaths()) {
+    const type = mimeForClipboardFile(filePath)
+    if (!type) continue
+    const stat = await fs.promises.stat(filePath).catch(() => null)
+    if (!stat?.isFile()) continue
+    if (type.startsWith('video/') || type.startsWith('audio/')) {
+      files.push({ name: path.basename(filePath), type, src: await mediaStore.importFile(filePath) })
+    } else {
+      files.push({ name: path.basename(filePath), type, bytes: await fs.promises.readFile(filePath) })
+    }
+  }
+  return files
+})
+
+ipcMain.handle('media:import-file', async (_e, source: string) => mediaStore.importFile(source))
+ipcMain.handle('media:normalize-file', async (_e, src: string) => {
+  const input = mediaAssets.resolve(src)
+  if (!input) throw new Error('The original video is unavailable.')
+  const ffmpeg = findFfmpegBinary()
+  if (!ffmpeg) throw new Error('This video format needs a converter that is not installed.')
+  const output = await mediaStore.allocate('video.webm')
+  try {
+    await runFfmpegNormalize(ffmpeg, input, mediaStore.assetPath(output))
+    return output
+  } catch (error) { await fs.promises.rm(mediaStore.assetPath(output), { force: true }); throw error }
+})
+// Generated/clipboard Files have no native path. Bound each upload to 8 MiB.
+const mediaUploads = new Map<string, { owner: number; offset: number; size: number }>()
+ipcMain.handle('media:begin-upload', async (event, payload: { name: string; size: number }) => {
+  if (!Number.isSafeInteger(payload.size) || payload.size < 0) throw new Error('Invalid media size')
+  const src = await mediaStore.allocate(payload.name)
+  await fs.promises.writeFile(mediaStore.assetPath(src), new Uint8Array(), { flag: 'wx' })
+  mediaUploads.set(src, { owner: event.sender.id, offset: 0, size: payload.size })
+  return src
+})
+ipcMain.handle('media:upload-chunk', async (event, payload: { src: string; bytes: Uint8Array }) => {
+  const upload = mediaUploads.get(payload.src)
+  if (!upload || upload.owner !== event.sender.id || !(payload.bytes instanceof Uint8Array) || payload.bytes.byteLength > 8 * 1024 * 1024 || upload.offset + payload.bytes.byteLength > upload.size) throw new Error('Invalid media upload')
+  await fs.promises.appendFile(mediaStore.assetPath(payload.src), payload.bytes)
+  upload.offset += payload.bytes.byteLength
+})
+ipcMain.handle('media:end-upload', async (event, payload: { src: string; abort?: boolean }) => {
+  const upload = mediaUploads.get(payload.src)
+  if (!upload || upload.owner !== event.sender.id) throw new Error('Invalid media upload')
+  mediaUploads.delete(payload.src)
+  if (payload.abort || upload.offset !== upload.size) {
+    await fs.promises.rm(mediaStore.assetPath(payload.src), { force: true })
+    if (!payload.abort) throw new Error('Media upload was incomplete')
+  }
 })
 
 ipcMain.handle(
@@ -871,35 +925,10 @@ function runFfmpegNormalize(
   outputPath: string,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    // Conversion is a decode fallback, not a reduced playback proxy. Keep
-    // source dimensions/timestamps and avoid another lossy video encode.
-    const child = spawn(ffmpeg, [
-      '-y',
-      '-i',
-      inputPath,
-      '-map',
-      '0:v:0',
-      '-map',
-      '0:a?',
-      '-c:v',
-      'libvpx-vp9',
-      '-deadline',
-      'good',
-      '-cpu-used',
-      '4',
-      '-lossless',
-      '1',
-      '-b:v',
-      '0',
-      '-c:a',
-      'libvorbis',
-      '-b:a',
-      '160k',
-      outputPath,
-    ])
+    const child = spawn(ffmpeg, videoNormalizationArgs(inputPath, outputPath))
     let stderr = ''
     child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString()
+      stderr = (stderr + chunk.toString()).slice(-8000)
     })
     child.on('error', reject)
     child.on('close', (code) => {
@@ -1989,6 +2018,7 @@ ipcMain.handle(
     const filePath = result.filePaths[0]
     try {
       const bytes = fs.readFileSync(filePath)
+      mediaAssets.registerProject(filePath)
       if (opts?.trackRecent !== false) addRecentProject(filePath)
       // Buffer → Uint8Array marshals across IPC.
       return { path: filePath, bytes: new Uint8Array(bytes) }
@@ -2005,15 +2035,17 @@ ipcMain.handle(
 
 ipcMain.handle(
   'file:write',
-  (
+  async (
     _e,
     payload: {
       path: string
       bytes: Uint8Array
       trackRecent?: boolean
+      mediaSources?: string[]
     },
-  ): boolean => {
+  ): Promise<boolean> => {
     try {
+      mediaAssets.copyToProject(payload.path, payload.mediaSources ?? [])
       fs.writeFileSync(payload.path, Buffer.from(payload.bytes))
       if (payload.trackRecent !== false) addRecentProject(payload.path)
       return true
@@ -2029,9 +2061,10 @@ ipcMain.handle(
 
 ipcMain.handle(
   'file:read',
-  (_e, filePath: string): Uint8Array | null => {
+  async (_e, filePath: string): Promise<Uint8Array | null> => {
     try {
       const bytes = fs.readFileSync(filePath)
+      mediaAssets.registerProject(filePath)
       addRecentProject(filePath)
       return new Uint8Array(bytes)
     } catch (err) {
@@ -2123,6 +2156,10 @@ ipcMain.handle('export:headless-error', (_e, message: string) => {
 // reopen. Other platforms quit on last window close, matching native
 // expectations.
 app.whenReady().then(() => {
+  loadRecentProjects()
+  for (const project of [...recentProjects].reverse()) mediaAssets.registerProject(project)
+  protocol.handle('hm-media', (request) => serveMediaAsset(mediaAssets, request))
+
   // Keep the Figma development plugin at one stable user-owned path. Figma
   // remembers that path after the user's one-time manifest import, while app
   // updates simply refresh the files in place on the next launch.
@@ -2152,7 +2189,6 @@ app.whenReady().then(() => {
     return
   }
 
-  loadRecentProjects()
   buildAppMenu()
   pendingOpenScenePath = parseOpenSceneArg(process.argv)
   createMainWindow()

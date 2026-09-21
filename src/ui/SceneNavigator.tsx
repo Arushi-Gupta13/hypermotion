@@ -20,6 +20,7 @@ import {
 } from '@/project'
 import { useSceneAPI, useSceneVersion } from '@/scene'
 import { useUI } from '@/state/ui'
+import { readScene, projectMediaSources } from '@/scene/file'
 import type { CompositionScene, SequenceItem } from '@/sequence'
 import { AppIcon } from '@/ui/AppIcon'
 import { NumberReadout } from '@/ui/fields/NumberReadout'
@@ -274,10 +275,14 @@ export function SceneNavigator() {
             suggestedName,
           })) as string | null
           if (!path) return
+          const exported = readScene(bytes)
+          const mediaSources = projectMediaSources(exported.doc)
+          exported.doc.destroy()
           const written = (await bridge.invoke('file:write', {
             path,
             bytes,
             trackRecent: false,
+            mediaSources,
           })) as boolean
           if (!written) {
             throw new Error('The scene file could not be written.')
@@ -288,7 +293,7 @@ export function SceneNavigator() {
         showToast({
           tone: 'success',
           title: 'Scene exported',
-          description: `${composition.name} was saved as a portable .hype file.`,
+          description: `${composition.name} was saved. Keep any accompanying .assets folder beside the .hype file.`,
         })
       } catch (error) {
         console.error('[scene-export] failed', error)
@@ -608,6 +613,7 @@ function SceneCard({
   return (
     <article
       ref={cardRef}
+      data-transition-scene={scene.id}
       draggable
       onDragStart={(event) => { setTooltipPosition(null); onDragStart(event) }}
       onDragEnd={onDragEnd}

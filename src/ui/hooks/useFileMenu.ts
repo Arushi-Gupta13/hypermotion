@@ -4,6 +4,8 @@ import { useEffect } from 'react'
 import { useSceneAPI } from '@/scene'
 import { sceneDoc } from '@/scene/internals'
 import { sceneToBytes, loadSceneIntoDoc } from '@/scene/file'
+import { prepareDesktopScene } from '@/scene/desktopTransfer'
+import { useToast } from '@/ui/toastStore'
 import { createSampleScene } from '@/scene/sample'
 import { useUI } from '@/state/ui'
 
@@ -32,9 +34,11 @@ declare global {
         writeTextSync?: (text: string) => boolean
         readText: () => Promise<string>
         writeText: (text: string) => Promise<void>
-        readFiles?: () => Promise<Array<{ name: string; type: string; bytes: Uint8Array }>>
+        readFiles?: () => Promise<Array<{ name: string; type: string; bytes?: Uint8Array; src?: string }>>
       }
       media?: {
+        importFile?: (file: File) => Promise<string>
+        normalizeFile?: (src: string) => Promise<string>
         normalizeVideo?: (payload: {
           name: string
           type: string
@@ -78,6 +82,7 @@ export function useFileMenu(): void {
     const offNew = bridge.on('file:new', () => {
       // Clear all nodes, reseed with the default sample scene.
       sceneDoc.transact(() => {
+        api.setMeta({ name: 'Untitled' })
         for (const id of api.getAllNodeIds()) {
           api.deleteNode(id)
         }
@@ -128,13 +133,16 @@ export function useFileMenu(): void {
           if (!chosen) return
           path = chosen
         }
-        const bytes = sceneToBytes(sceneDoc)
+        const { bytes, mediaSources } = await prepareDesktopScene(sceneDoc)
         const ok = (await bridge.invoke('file:write', {
           path,
           bytes,
+          mediaSources,
         })) as boolean
-        if (ok) setFile(path, Date.now())
-      })()
+        if (!ok) throw new Error('The project could not be written. Check the destination folder and available storage.')
+        setFile(path, Date.now())
+        reportSaveSuccess()
+      })().catch(reportSaveError)
     })
 
     const offSaveAs = bridge.on('file:save-as', () => {
@@ -144,13 +152,16 @@ export function useFileMenu(): void {
           suggestedName: `${api.getMeta()?.name || 'Untitled'}.hype`,
         })) as string | null
         if (!chosen) return
-        const bytes = sceneToBytes(sceneDoc)
+        const { bytes, mediaSources } = await prepareDesktopScene(sceneDoc)
         const ok = (await bridge.invoke('file:write', {
           path: chosen,
           bytes,
+          mediaSources,
         })) as boolean
-        if (ok) setFile(chosen, Date.now())
-      })()
+        if (!ok) throw new Error('The project could not be written. Check the destination folder and available storage.')
+        setFile(chosen, Date.now())
+        reportSaveSuccess()
+      })().catch(reportSaveError)
     })
 
     return () => {
@@ -183,4 +194,14 @@ function downloadSceneFile(name: string): void {
 
 function safeFilename(name: string): string {
   return name.replace(/[^a-zA-Z0-9-_ ]/g, '').trim() || 'Untitled'
+}
+
+function reportSaveError(error: unknown) {
+  console.error('[save] Failed to save project', error)
+  useToast.getState().show({ tone: 'error', title: 'Project could not be saved',
+    description: error instanceof Error ? error.message : String(error), durationMs: 10000 })
+}
+
+function reportSaveSuccess() {
+  useToast.getState().show({ tone: 'success', title: 'Project saved', description: 'Keep the accompanying .assets folder beside the project when moving or sharing it.', durationMs: 7000 })
 }

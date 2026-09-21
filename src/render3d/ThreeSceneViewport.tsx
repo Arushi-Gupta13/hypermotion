@@ -1,6 +1,15 @@
+import { syncMediaPlayback } from '@/media/syncPlayback'
+import { resolveTextShimmer } from '@/anim/textShimmerEffect'
 import { textShimmerFill } from '@/anim/textShimmer'
 // SPDX-License-Identifier: Apache-2.0
+import { getProjectAPI } from '@/project'
+import { cameraDissolveAt } from '@/sequence/cameraDissolve'
+import { CameraDissolveRenderer } from './CameraDissolveRenderer'
+import { getAnimEngine } from '@/anim'
 import { programMediaRate } from '@/state/sequenceMediaClock'
+import { videoVisibleAtTime } from '@/scene/mediaClip'
+import { createVideoTexture, ensureVideoTexture } from './videoTextureResource'
+import { createPlaybackVideo, masterVideoPrewarm } from './videoPrewarm'
 
 import {
   useEffect,
@@ -11,6 +20,7 @@ import {
   useSyncExternalStore,
 } from 'react'
 import * as THREE from 'three'
+import { videoFitUv } from './videoFit'
 import type { AnimatedValue } from '@/anim'
 import {
   textAnimationUsesLegacyTranslation,
@@ -45,7 +55,6 @@ import {
   textSegmentLinearProgress,
 } from '@/anim/textSegmentEnvelope'
 import type { Rect, SolvedLayout } from '@/layout'
-import { syncMediaPlayback } from '@/media/syncPlayback'
 import type {
   BlendMode,
   CameraNode,
@@ -340,6 +349,7 @@ interface HelperBundle {
 }
 
 const RENDER3D_VIDEO_REGISTRY = '__hypermotionRender3dVideos'
+const VIDEO_READY_EVENT = 'hypermotion-video-ready'
 const EMPTY_PLANES: Plane3D[] = []
 const parsedCanvasColorCache = new Map<string, string | null>()
 const helperBundles = new WeakMap<THREE.Group, HelperBundle>()
@@ -389,29 +399,8 @@ function createTextSegmentTexture(
   return texture
 }
 
-function createVideoTexture(
-  video: HTMLVideoElement,
-): THREE.VideoTexture {
-  const texture = new THREE.VideoTexture(video)
-  texture.colorSpace = THREE.SRGBColorSpace
-  texture.flipY = false
-  texture.generateMipmaps = false
-  texture.minFilter = THREE.LinearFilter
-  texture.magFilter = THREE.LinearFilter
-  return texture
-}
-
 function createVideoElement(node: Extract<Node, { kind: 'video' }>): HTMLVideoElement {
-  const video = document.createElement('video')
-  video.src = node.src
-  video.muted = true
-  video.volume = 0
-  video.loop = false
-  video.playsInline = true
-  video.preload = 'auto'
-  video.crossOrigin = 'anonymous'
-  video.load()
-  return video
+  return masterVideoPrewarm.take(node) ?? createPlaybackVideo(node.src)
 }
 
 function disposePlaneRecord(record: PlaneRecord) {
@@ -433,15 +422,16 @@ function syncVideoElement(
   playing: boolean,
   playhead: number,
 ) {
-  video.muted = node.muted
-  video.volume = Math.max(0, Math.min(1, node.volume))
+  if (video.muted !== node.muted) video.muted = node.muted
+  const volume = Math.max(0, Math.min(1, node.volume))
+  if (video.volume !== volume) video.volume = volume
   const rate = clampPlaybackRate(node.playbackRate)
   const clockRate = programMediaRate()
   const mediaRate = clampPlaybackRate(rate * (clockRate || 1))
   if (video.playbackRate !== mediaRate) video.playbackRate = mediaRate
   const sourceClipLen = Math.max(0, (node.trimEnd || node.duration) - node.trimStart)
   const sceneClipLen = sourceClipLen / rate
-  const inRange = playhead >= node.startTime && playhead < node.startTime + sceneClipLen
+  const inRange = playhead >= node.startTime && (node.loop || playhead < node.startTime + sceneClipLen)
   const local = clampVideoLocal((playhead - node.startTime) * rate + node.trimStart, node)
 
   const shouldPlay = playing && inRange && clockRate > 0
@@ -512,6 +502,8 @@ export function ThreeSceneViewport({
 }: ThreeSceneViewportProps) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
+  const dissolveRef = useRef<CameraDissolveRenderer | null>(null)
+  const dissolveEffectsRef = useRef<ScenePostEffectsRenderer | null>(null)
   const sceneRef = useRef<THREE.Scene | null>(null)
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
   const postEffectsRef = useRef<ScenePostEffectsRenderer | null>(null)
@@ -536,9 +528,11 @@ export function ThreeSceneViewport({
     texturePixelRatio: number
     curvePreviewRevision: number
     vectorEditPreview: ReturnType<typeof vectorEditPreviewStore.getSnapshot>
+    videoRevision: number
   } | null>(null)
   const [webglUnavailable, setWebglUnavailable] = useState(false)
   const [imageRevision, setImageRevision] = useState(0)
+  const [videoRevision, setVideoRevision] = useState(0)
   const [postEffectsQualityRevision, setPostEffectsQualityRevision] =
     useState(0)
   const postEffectsIdleQuality = useMemo(
@@ -648,11 +642,12 @@ export function ThreeSceneViewport({
         }
         continue
       }
-      if (node?.kind !== 'text' || !node.textAnimation) continue
-      if (node.textAnimation.id === 'shimmer' || api.getTracksForNode(id).some(track => track.textAnimation?.id === 'shimmer')) {
+      if (node?.kind !== 'text') continue
+      if (node.textShimmer || node.textAnimation?.id === 'shimmer' || api.getTracksForNode(id).some(track => track.textAnimation?.id === 'shimmer')) {
         ranges.set(id, { start: 0, end: duration })
         continue
       }
+      if (!node.textAnimation) continue
       const engineDriven = api
         .getTracksForNode(id)
         .some(
@@ -689,10 +684,13 @@ export function ThreeSceneViewport({
 
   useEffect(() => {
     const onImageLoaded = () => setImageRevision((revision) => revision + 1)
+    const onVideoReady = () => setVideoRevision((revision) => revision + 1)
+    window.addEventListener(VIDEO_READY_EVENT, onVideoReady)
     const paperShaderEvent = paperShaderSourceEventName()
     window.addEventListener(IMAGE_TEXTURE_LOADED_EVENT, onImageLoaded)
     window.addEventListener(paperShaderEvent, onImageLoaded)
     return () => {
+      window.removeEventListener(VIDEO_READY_EVENT, onVideoReady)
       window.removeEventListener(IMAGE_TEXTURE_LOADED_EVENT, onImageLoaded)
       window.removeEventListener(paperShaderEvent, onImageLoaded)
     }
@@ -765,6 +763,10 @@ export function ThreeSceneViewport({
       planeSyncRef.current = null
       publishRender3dVideos(planes)
       clearHelperGroup(helpers)
+      dissolveRef.current?.dispose()
+      dissolveRef.current = null
+      dissolveEffectsRef.current?.dispose()
+      dissolveEffectsRef.current = null
       renderer.dispose()
       // HMR and React development remounts can otherwise leave retired WebGL
       // contexts alive until Chromium's GC runs. After enough edits the dev
@@ -845,7 +847,7 @@ export function ThreeSceneViewport({
     // finish metadata/decode without changing any React input; force its
     // synchronization on every pass so a follow-up request can initiate the
     // exact seek and then paint the decoded presentation frame.
-    const requestedVideoSync = hasVideoPlane && renderRequest !== null
+    const requestedVideoSync = hasVideoPlane && (renderRequest !== null || !playing)
     const planeStateChanged =
       !previousPlaneSync ||
       previousPlaneSync.planes !== planes ||
@@ -858,13 +860,11 @@ export function ThreeSceneViewport({
       previousPlaneSync.textureRevision !== textureRevision ||
       previousPlaneSync.curvePreviewRevision !== curvePreviewRevision ||
       previousPlaneSync.vectorEditPreview !== vectorEditPreview ||
+      previousPlaneSync.videoRevision !== videoRevision ||
       previousPlaneSync.showPlanes !== showPlanes ||
       previousPlaneSync.pixelRatio !== pixelRatio ||
       previousPlaneSync.texturePixelRatio !== stableTexturePixelRatio ||
       (hasSegmentTextPlane && previousPlaneSync.camera !== resolvedCamera) ||
-      (hasVideoPlane &&
-        (previousPlaneSync.playing !== playing ||
-          previousPlaneSync.playhead !== playhead)) ||
       requestedVideoSync ||
       playheadDrivenTextureChanged ||
       hasDynamicDepthOfField ||
@@ -899,6 +899,19 @@ export function ThreeSceneViewport({
         clearPlanes(scene, planesRef.current)
       }
     }
+    // Advancing a video does not change geometry, layout or paint. Let the
+    // decoder update VideoTexture and synchronize only media on reused frames.
+    if (!planeStateChanged && showPlanes && hasVideoPlane) {
+      for (const plane of planes) {
+        if (plane.node.kind !== 'video') continue
+        const record = planesRef.current.get(plane.nodeId)
+        if (record?.video) {
+          syncVideoElement(record.video, plane.node, playing, playhead)
+          record.mesh.visible = plane.node.visible && !hiddenNodeIds.includes(plane.nodeId)
+            && videoVisibleAtTime(plane.node, playhead)
+        }
+      }
+    }
     // Keep the comparison snapshot current even when a camera-only preview
     // reused every plane. GPU DOF changes uniforms only; sharp plane textures
     // stay cached while timeline and camera gestures run.
@@ -917,6 +930,7 @@ export function ThreeSceneViewport({
       texturePixelRatio: stableTexturePixelRatio,
       curvePreviewRevision,
       vectorEditPreview,
+      videoRevision,
     }
     syncHelpers(
       helpersRef.current,
@@ -994,6 +1008,33 @@ export function ThreeSceneViewport({
         renderer.render(scene, perspective)
       }
     }
+    const composition = getProjectAPI(api).getScenes().find(s => s.rootNodeId === api.getRoot())
+    const dissolve = composition ? cameraDissolveAt(composition, playhead) : null
+    const outgoing = dissolve && dissolve.to === camera.id ? api.getNode(dissolve.from) : null
+    if (dissolve && outgoing?.kind === 'camera' && !showHelpers) {
+      const drawingSize = renderer.getDrawingBufferSize(new THREE.Vector2())
+      if (!dissolveRef.current?.matches(drawingSize.x, drawingSize.y)) {
+        dissolveRef.current?.dispose()
+        dissolveRef.current = new CameraDissolveRenderer(drawingSize.x, drawingSize.y)
+      }
+      dissolveRef.current.captureIncoming(renderer)
+      const outgoingAnimation = animated[outgoing.id] ?? (!finalRender ? getAnimEngine().getSnapshot()[outgoing.id] : undefined)
+      const target = outgoing.focusTargetNodeId ? planes.find(p => p.nodeId === outgoing.focusTargetNodeId)?.center : null
+      const outgoingCamera = resolveCamera3D(outgoing, outgoingAnimation, { width, height }, target)
+      syncThreeCamera(perspective, outgoingCamera, width, height)
+      syncPlanes(scene, planesRef.current, api, planeBuildContext, layout, planes, selectedIds, hiddenNodeIds,
+        outgoingCamera, renderer, perspective, animated, playing, playhead, textureRevision,
+        playheadDrivenTextureRanges, interactiveCameraPreview, finalRender, curvePreviewRevision, vectorEditPreview, stableTexturePixelRatio)
+      if (cameraPostEffectsActive(outgoingCamera)) {
+        if (!dissolveEffectsRef.current) dissolveEffectsRef.current = new ScenePostEffectsRenderer(renderer, scene, perspective, width, height, pixelRatio)
+        dissolveEffectsRef.current.configure(outgoingCamera, width, height, pixelRatio, playhead + (outgoing.proceduralTimeOffset ?? 0))
+        dissolveEffectsRef.current.render()
+      } else renderer.render(scene, perspective)
+      dissolveRef.current.blend(renderer, dissolve.progress)
+      syncThreeCamera(perspective, resolvedCamera, width, height)
+      // The outgoing render updated camera-dependent materials; resync next frame.
+      planeSyncRef.current = null
+    }
     // Keep this callback adjacent to the final renderer submission. Export
     // consumes the drawing buffer synchronously from this acknowledgement;
     // deferring it to a passive effect can observe a cleared/stale WebGL
@@ -1002,6 +1043,7 @@ export function ThreeSceneViewport({
       onFrameRendered?.(renderRequest, renderer.domElement)
     }
   }, [
+    camera.id,
     camera.proceduralTimeOffset,
     api,
     planeBuildContext,
@@ -1030,6 +1072,7 @@ export function ThreeSceneViewport({
     curvePreviewRevision,
     vectorEditPreview,
     texturePixelRatio,
+    videoRevision,
     // Changing the zoom-derived pixel-ratio bucket reallocates and clears the
     // WebGL drawing buffer. Render again immediately after the resize effect.
     renderPixelRatio,
@@ -1582,22 +1625,25 @@ function syncPlanes(
       bladeRotation: camera.bladeRotation,
       bokehRatio: camera.bokehRatio,
       bends: textureBends,
+      clipMap: !!videoNode,
     })
     if (videoNode) {
-      if (record.textureKind !== 'video' || record.videoSource !== videoNode.src) {
-        record.texture.dispose()
-        const video = createVideoElement(videoNode)
-        record.texture = createVideoTexture(video)
-        record.textureKind = 'video'
-        record.video = video
-        record.videoSource = videoNode.src
+      if (ensureVideoTexture(record, videoNode.src, () => createVideoElement(videoNode))) {
         material.map = record.texture
         material.needsUpdate = true
       }
       record.textureRevision = null
       record.textureSignature = textureSignature
       syncVideoElement(record.video!, videoNode, playing, playhead)
-      record.texture.needsUpdate = true
+      const uv = videoFitUv(
+        record.video!.videoWidth, record.video!.videoHeight,
+        textureRect.width, textureRect.height, videoNode.fit, videoNode.crop,
+      )
+      record.texture.repeat.set(uv.repeatX, uv.repeatY)
+      record.texture.offset.set(uv.offsetX, uv.offsetY)
+      record.texture.updateMatrix()
+      // VideoTexture marks itself dirty only when the decoder presents a
+      // frame. Opacity/transform changes update the mesh, not the video data.
     } else if (needsCanvasRaster && canvas) {
       if (record.textureKind !== 'canvas') {
         record.texture.dispose()
@@ -1656,12 +1702,13 @@ function syncPlanes(
     }
     syncMaterialClipping(record, plane)
     record.mesh.material.opacity = Math.max(0, Math.min(1, plane.opacity))
-    record.mesh.visible = plane.node.visible && !hidden.has(plane.nodeId)
+    const videoVisible = !videoNode || videoVisibleAtTime(videoNode, playhead)
+    record.mesh.visible = plane.node.visible && !hidden.has(plane.nodeId) && videoVisible
     record.outline.visible =
-      selected.has(plane.nodeId) && !hidden.has(plane.nodeId)
+      selected.has(plane.nodeId) && !hidden.has(plane.nodeId) && videoVisible
     if (record.referenceOutline) {
       record.referenceOutline.visible =
-        layerBends.some((bend) => bend.showOriginalGeometry) &&
+        videoVisible && layerBends.some((bend) => bend.showOriginalGeometry) &&
         selected.has(plane.nodeId) &&
         !hidden.has(plane.nodeId) &&
         !finalRender
@@ -2632,6 +2679,8 @@ function usesStaticLetterScrambleAtlas(
   config: TextAnimationConfig | null,
 ): boolean {
   if (config?.id !== 'scramble' || config.applyTo !== 'letters') return false
+  // A moving Shimmer gradient must be painted at each glyph's actual position.
+  if (resolveTextShimmer(node, config)) return false
   // A shared pre-baked glyph may be reused at every letter position only when
   // its paint is position-independent. Animated colors, legacy text colors,
   // and solid fills qualify; gradients/images retain the dynamic atlas path
@@ -2658,7 +2707,7 @@ function textSegmentTextureSignature(
     anim,
     config,
   )
-  let dynamicFrame: unknown = config?.id === 'shimmer' ? textShimmerFill(config, playhead, anim?.fill ?? (node.appearance.fill?.kind === 'solid' ? node.appearance.fill.color : node.color)) : null
+  let dynamicFrame: unknown = null
   if (config?.id === 'scramble' && !staticLetterScramble) {
     // Scramble changes glyph content, so it is the only segment effect that
     // needs frequent atlas uploads. Thirty texture updates per second keeps
@@ -2758,6 +2807,7 @@ function textSegmentTextureSignature(
     blurPadding,
     atlasScale: Number(atlasScale.toFixed(3)),
     dynamicFrame,
+    shimmer: resolveTextShimmer(node, config) ? textShimmerFill(resolveTextShimmer(node, config)!, playhead, anim?.fill ?? (node.appearance.fill?.kind === 'solid' ? node.appearance.fill.color : node.color)) : null,
   })
 }
 
@@ -3461,7 +3511,7 @@ function paintTextSegmentAtlasCell(
       -(entry.y - entry.padding),
     )
     const effectGradient =
-      config?.id === 'shimmer' ? textShimmerFill(config, playhead, anim?.fill ?? (node.appearance.fill?.kind === 'solid' ? node.appearance.fill.color : node.color)) :
+      resolveTextShimmer(node, config) ? textShimmerFill(resolveTextShimmer(node, config)!, playhead, anim?.fill ?? (node.appearance.fill?.kind === 'solid' ? node.appearance.fill.color : node.color)) :
       config?.id === 'gradient-reveal'
         ? config.mode === 'in'
           ? config.endGradient ?? config.startGradient
@@ -4512,7 +4562,9 @@ function paintNodeSource(
   const cornerSmoothing =
     node.kind === 'ellipse' ? 0 : appearanceCornerSmoothing(node)
   const paintContent = () => {
-    paintFill(ctx, node.appearance.fill, w, h, node.kind === 'text')
+    if (!(node.kind === 'text' && node.textShimmer)) {
+      paintFill(ctx, node.appearance.fill, w, h, node.kind === 'text')
+    }
     if (node.kind === 'image' && node.src) paintImageNode(ctx, node, w, h)
     if (node.kind === 'shader') paintPaperShaderNode(ctx, node, w, h)
   }
@@ -4537,6 +4589,13 @@ function paintNodeSource(
   }
   if (node.kind === 'text') {
     paintAnimatedTextNode(ctx, node, 0, 0, w, h, anim, playhead)
+    if (node.textShimmer) {
+      ctx.save()
+      ctx.globalCompositeOperation = 'source-in'
+      paintFill(ctx, textShimmerFill(node.textShimmer, playhead,
+        anim?.fill ?? (node.appearance.fill?.kind === 'solid' ? node.appearance.fill.color : node.color)), w, h, true)
+      ctx.restore()
+    }
   }
   const stroke = node.appearance.stroke
   if (stroke && stroke.width > 0) {

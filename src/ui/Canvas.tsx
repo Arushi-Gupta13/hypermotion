@@ -1,3 +1,4 @@
+import { syncMediaPlayback } from '@/media/syncPlayback'
 import { textShimmerFill } from '@/anim/textShimmer'
 // SPDX-License-Identifier: Apache-2.0
 import { useSequenceExportPreview } from '@/export/sequencePreview'
@@ -16,6 +17,8 @@ import {
   type CSSProperties,
 } from 'react'
 import { createPortal } from 'react-dom'
+import { startVideoFrameLoop } from './videoFrameLoop'
+import { videoVisibleAtTime } from '@/scene/mediaClip'
 import {
   useSceneAPI,
   useSceneVersion,
@@ -34,14 +37,13 @@ import type {
   VectorNode,
 } from '@/scene'
 import type { Rect, SolvedLayout } from '@/layout'
-import { syncMediaPlayback } from '@/media/syncPlayback'
 import type { SceneAPI } from '@/scene/doc'
 import { useLayout } from '@/ui/hooks/useLayout'
 import { setLastSolvedLayout } from '@/ui/hooks/lastSolvedLayout'
 import { useUI } from '@/state/ui'
 import { vectorEditPreviewStore } from '@/ui/vectorEditPreviewStore'
 import type { Tool } from '@/state/ui'
-import { useProjectAPI } from '@/project'
+import { getProjectAPI, useProjectAPI } from '@/project'
 import { resolveMasterTime } from '@/sequence'
 import { useExportProgress } from '@/export/progressStore'
 import { SelectionOverlay } from '@/ui/SelectionOverlay'
@@ -96,6 +98,7 @@ import {
 import { resolveAnimatedLayerEffects } from '@/render/layerEffects'
 import type { CameraPostEffectsState } from '@/render3d/postEffects'
 import { ThreeSceneViewport } from '@/render3d/ThreeSceneViewport'
+import { resolveVideoCrop } from '@/render3d/videoFit'
 import {
   playbackPixelRatio,
   viewportPixelRatioForZoom,
@@ -313,11 +316,19 @@ const AnimatedThreeSceneViewport = memo(function AnimatedThreeSceneViewport({
     props.playing === true &&
     camera.vhsEnabled === true &&
     (cameraAnim?.vhsIntensity ?? camera.vhsIntensity ?? 0.65) > 0.001
+  const needsCameraDissolveClock = useMemo(() => {
+    void props.sceneVersion
+    const composition = getProjectAPI(props.api).getScenes()
+      .find((scene) => scene.rootNodeId === props.api.getRoot())
+    return Object.values(composition?.cameraCuts ?? {})
+      .some((cut) => (cut.dissolveDuration ?? 0) > 0)
+  }, [props.api, props.sceneVersion])
   const playbackClockEnabled =
+    (props.playing === true && needsCameraDissolveClock) ||
     videoClockEnabled ||
     nodeTextClockEnabled ||
     paperShaderClockEnabled ||
-    temporalVhsEnabled
+    temporalVhsEnabled || props.playing === true
   const playbackClock = useAnimationPlaybackClock(playbackClockEnabled)
   const pausedPlayhead = useUI((state) =>
     state.playing ? null : state.playhead,
@@ -5335,7 +5346,7 @@ function TextGlyphs({
   // effects already rerender from their animated snapshot, so they can read
   // the exact engine time without subscribing to the global UI store.
   const mirroredPlayhead = useUI((s) =>
-    legacyTextAnimation ? s.playhead : 0,
+    legacyTextAnimation || node.textShimmer ? s.playhead : 0,
   )
   const playhead = hasTextAnimationTracks
     ? getAnimEngine().getPlayhead()
@@ -5445,6 +5456,10 @@ function TextGlyphs({
         }
       : { color: node.color }),
     ...(textAnimation?.id === 'shimmer' ? { color: effectiveFill?.kind === 'solid' ? effectiveFill.color : node.color, background: undefined, WebkitTextFillColor: undefined } : {}),
+    ...(node.textShimmer ? {
+      backgroundImage: fillToCss(textShimmerFill(node.textShimmer, playhead, effectiveFill?.kind === 'solid' ? effectiveFill.color : node.color)),
+      backgroundClip: 'text', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', color: 'transparent',
+    } : {}),
     textAlign,
     whiteSpace: hugWidth ? 'pre' : 'pre-wrap',
     wordBreak: hugWidth ? 'normal' : 'break-word',
@@ -5901,6 +5916,7 @@ function textAnimationSegmentStyle(
     transform: transforms.length > 0 ? transforms.join(' ') : undefined,
     transformOrigin: '50% 50%',
     transformStyle: motion && motion.z !== 0 ? 'preserve-3d' : undefined,
+    ...(sharedStyle.backgroundImage && sharedStyle.WebkitTextFillColor === 'transparent' ? { backgroundImage: sharedStyle.backgroundImage, backgroundClip: 'text', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', color: 'transparent' } : {}),
     ...(config.id === 'shimmer' ? { background: fillToCss(textShimmerFill(config, playhead, typeof sharedStyle.color === 'string' ? sharedStyle.color : undefined)), backgroundClip: 'text', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', color: 'transparent' } : {}),
     willChange: 'transform, opacity, filter, clip-path, letter-spacing',
   }
@@ -6328,7 +6344,7 @@ function MediaVideoSource({ node }: MediaVideoProps) {
   useEffect(() => {
     const el = ref.current
     if (!el) return
-    const inRange = playhead >= node.startTime && playhead < node.startTime + sceneClipLen
+    const inRange = playhead >= node.startTime && (node.loop || playhead < node.startTime + sceneClipLen)
     const shouldPlay = playing && inRange && clockRate > 0
     syncMediaPlayback(
       el,
@@ -6341,24 +6357,21 @@ function MediaVideoSource({ node }: MediaVideoProps) {
     const video = ref.current
     const canvas = canvasRef.current
     if (!video || !canvas) return
-    let raf = 0
-    const draw = () => {
+    return startVideoFrameLoop(video, () => {
       if (drawVideoToCanvas(video, canvas)) {
         setHasCanvasFrame(true)
       }
-      if (playing && !video.paused && !video.ended) {
-        raf = requestAnimationFrame(draw)
-      }
-    }
-    draw()
-    if (playing) raf = requestAnimationFrame(draw)
-    return () => {
-      if (raf) cancelAnimationFrame(raf)
-    }
+    }, playing)
   }, [playing, mediaReadyTick, playhead, node.src])
 
   if (!node.src) return null
   const poster = node.poster || localPoster || undefined
+  const crop = resolveVideoCrop(node.crop)
+  const cropStyle = {
+    objectPosition: `${crop.x * 100}% ${crop.y * 100}%`,
+    transform: `scale(${crop.zoom})`,
+    transformOrigin: `${crop.x * 100}% ${crop.y * 100}%`,
+  }
   const markVideoReady = () => {
     setDecodeError('')
     setMediaReadyTick((tick) => tick + 1)
@@ -6374,6 +6387,7 @@ function MediaVideoSource({ node }: MediaVideoProps) {
 
   return (
     <>
+      <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', borderRadius: 'inherit', visibility: videoVisibleAtTime(node, playhead) ? 'visible' : 'hidden' }}>
       {poster ? (
         <img
           src={poster}
@@ -6388,6 +6402,7 @@ function MediaVideoSource({ node }: MediaVideoProps) {
             borderRadius: 'inherit',
             pointerEvents: 'none',
             zIndex: hasCanvasFrame ? 1 : 3,
+            ...cropStyle,
           }}
         />
       ) : null}
@@ -6402,6 +6417,7 @@ function MediaVideoSource({ node }: MediaVideoProps) {
           borderRadius: 'inherit',
           pointerEvents: 'none',
           zIndex: 2,
+          ...cropStyle,
         }}
       />
       <video
@@ -6415,7 +6431,6 @@ function MediaVideoSource({ node }: MediaVideoProps) {
         onLoadedData={markVideoReady}
         onCanPlay={markVideoReady}
         onSeeked={markVideoReady}
-        onTimeUpdate={markVideoReady}
         onError={() => {
           const el = ref.current
           setDecodeError(el?.error?.message || 'Video decode failed')
@@ -6439,6 +6454,7 @@ function MediaVideoSource({ node }: MediaVideoProps) {
           {decodeError}
         </div>
       ) : null}
+      </div>
     </>
   )
 }
@@ -6492,6 +6508,9 @@ function clampLocal(
 ): number {
   const trimEnd = node.trimEnd || node.duration || 0
   if (t < node.trimStart) return node.trimStart
+  if (node.loop && trimEnd > node.trimStart) {
+    return node.trimStart + (t - node.trimStart) % (trimEnd - node.trimStart)
+  }
   if (t > trimEnd) return trimEnd
   return t
 }

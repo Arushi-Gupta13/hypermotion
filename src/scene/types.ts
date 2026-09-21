@@ -842,6 +842,8 @@ export interface TextNode extends NodeBase {
    * keeping one editable effect row in the Animate inspector.
    */
   textAnimation?: import('@/anim/textAnimations').TextAnimationConfig | null
+  /** Independent paint effect, composited with the text animation. */
+  textShimmer?: import('@/anim/textAnimations').TextAnimationConfig | null
 }
 
 export interface ImageNode extends NodeBase {
@@ -902,6 +904,10 @@ export interface ShaderNode extends NodeBase {
  */
 export interface VideoNode extends NodeBase {
   kind: 'video'
+  /** Hide outside the timeline clip rather than holding its endpoint frames. */
+  clipToRange?: boolean
+  /** Non-destructive source positioning and magnification within the video frame. */
+  crop?: { x: number; y: number; zoom: number }
   size: Size
   src: string
   /** Still preview frame used before the video element has painted. */
