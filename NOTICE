@@ -21,6 +21,7 @@ Runtime dependencies:
   - Yjs (MIT)                           https://github.com/yjs/yjs
   - y-indexeddb (MIT)                   https://github.com/yjs/y-indexeddb
   - Yoga Layout (MIT)                   https://github.com/facebook/yoga
+  - Three.js (MIT)                      https://github.com/mrdoob/three.js
   - PixiJS (MIT)                        https://github.com/pixijs/pixijs
   - Zustand (MIT)                       https://github.com/pmndrs/zustand
   - Immer (MIT)                         https://github.com/immerjs/immer
@@ -81,3 +82,37 @@ https://nucleoapp.com/license
 This distribution includes seven cursor-state assets (Default, Pointer,
 Click, Hand, Grab, Grabbing, and Move), within Nucleo's 100-icon limit
 for open-source projects. Click is derived from the Pointer SVG.
+
+---
+
+Third-party 3D device models (CC Attribution)
+
+The following device mockup models (public/models/mockups/*.glb) are
+used under Creative Commons Attribution (CC-BY), each originally
+published on Sketchfab by the credited creator. CC-BY permits
+commercial use and modification; these are used as-is (re-exported for
+web delivery), unmodified in shape.
+
+  - iPhone 17 Pro — Ranguel
+    https://sketchfab.com/3d-models/iphone-17-pro-4541aa8a28324b33a2baaf81d263aaec
+  - iPhone 17 Pro Max — MajdyModels
+    https://sketchfab.com/3d-models/iphone-17-pro-max-87fc1df741384124a8ce0226d2b2058d
+  - iPhone 16 Pro Max — MajdyModels
+    https://sketchfab.com/3d-models/iphone-16-pro-max-41a071ae12794b668502f58d1e0fd1a3
+  - 2021 MacBook Pro 14" (M1 Pro/M1 Max) — akshatmittal
+    https://sketchfab.com/3d-models/2021-macbook-pro-14-m1-pro-m1-max-f6b0b940fb6a4286b18a674ef32af2d3
+  - MacBook Pro M3 16" (2024) — jackbaeten
+    https://sketchfab.com/3d-models/macbook-pro-m3-16-inch-2024-8e34fc2b303144f78490007d91ff57c4
+  - iPad Pro 13" Silver M4 — polyman Studio
+    https://sketchfab.com/3d-models/ipad-pro-13in-silver-m4-8a113340443e49d3b905ab9f0b45efd6
+  - Apple Watch Ultra 2 — polyman Studio
+    https://sketchfab.com/3d-models/apple-watch-ultra-2-f33263c457664b43909200c5ed5e6fa2
+  - Apple Watch Series 9 — polyman Studio
+    https://sketchfab.com/3d-models/apple-watch-series-9-b6d698e718bb425a97057767f0cede47
+  - iMac 24" M1 Green (2021) — Kanedog
+    https://sketchfab.com/3d-models/imac-24-m1-green-2021-0cfe04fb7123492ab96664877607333f
+  - Apple Pro Display XDR — polyman Studio
+    https://sketchfab.com/3d-models/apple-pro-display-xdr-7e92cfb7c84d41f886c7748be6c567da
+
+Web-optimized .glb files sourced via:
+https://github.com/newomp4/mok (CREDITS.md)

@@ -33,13 +33,13 @@ import { uniqueNodeName } from '@/scene/uniqueNodeName'
  * already branches on `arrangement`/`animation` generically.
  */
 
-export type PerspectiveTemplateKind = 'card-tunnel' | 'orbit-globe' | 'totem-wall'
+export type PerspectiveTemplateKind = 'card-tunnel' | 'orbit-globe' | 'totem-wall' | 'sphere-wall'
 
 /** How slots are laid out in space. Fixed per template kind. */
-export type PerspectiveArrangement = 'ring' | 'bands' | 'grid'
+export type PerspectiveArrangement = 'ring' | 'grid' | 'sphere-interior'
 
-/** What (if anything) the container keyframes on its own. Fixed per template kind. */
-export type PerspectiveAnimation = 'spin-y' | 'none'
+/** What (if anything) the container keyframes on. Fixed per template kind. */
+export type PerspectiveAnimation = 'spin-y' | 'sway-y' | 'none'
 
 export interface PerspectiveTemplateParams {
   // Widened to `string` (not `PerspectiveTemplateKind`) so this type
@@ -47,7 +47,7 @@ export interface PerspectiveTemplateParams {
   // cast — that field is deliberately plain-string-typed for the same
   // layering reason as `deviceMockupKind` (see its doc comment).
   kind: string
-  /** Distance from the ring/sphere's center, in canvas pixels. Unused by grid arrangement. */
+  /** Distance from the ring/sphere/cylinder's center, in canvas pixels. Unused by grid arrangement. */
   radius: number
   slotWidth: number
   slotHeight: number
@@ -55,7 +55,7 @@ export interface PerspectiveTemplateParams {
   slotCount: number
   /** Seconds for one full spin cycle. Unused when animation is 'none'. */
   spinDuration: number
-  /** Columns per row. Only meaningful for grid arrangement. */
+  /** Columns per row. Meaningful for grid and cylinder arrangement. */
   gridColumns: number
   /** Gap between grid cells, in canvas pixels. Only meaningful for grid arrangement. */
   gridGap: number
@@ -97,17 +97,36 @@ export const PERSPECTIVE_TEMPLATES: Record<PerspectiveTemplateKind, PerspectiveT
   'orbit-globe': {
     kind: 'orbit-globe',
     label: 'Orbit Globe',
-    arrangement: 'bands',
-    animation: 'spin-y',
-    slotCount: 20,
+    // Same concave, camera-centered "inside a hollow shell" geometry as
+    // sphere-wall (see sphereInteriorSlotTransforms) — a denser,
+    // smaller-card patch of the same huge inner sphere, not a
+    // different geometric system. Previously this was a set of
+    // external latitude rings (bandsSlotTransforms) with a corner
+    // radius exactly half the slot size, which rendered as circular
+    // dots orbiting a distant ball instead of a wall of rectangular
+    // cards — the "floating dots, not a card wall" bug.
+    // slotCornerRadius below is deliberately far short of half of
+    // slotWidth/slotHeight so cards read as rounded rectangles, not
+    // circles.
+    //
+    // 15 columns × 9 rows (slotCount 135) is deliberately odd × odd —
+    // gives an exact center slot at phi=0, theta=0 that faces the
+    // camera perfectly straight-on, rather than splitting the center
+    // between two neighboring slots. radius 440 with this slot
+    // size/gap makes each angular step ((44+16)/440 ≈ 7.8°) work out
+    // to roughly a 109° horizontal span (14 steps) by 62.5° vertical
+    // span (8 steps) — "a large central patch," not a full globe.
+    arrangement: 'sphere-interior',
+    animation: 'sway-y',
+    slotCount: 135,
     slotWidth: 44,
     slotHeight: 44,
-    radius: 170,
+    radius: 440,
     slotColor: '#2a2a32',
     slotStrokeColor: '#55555f',
-    slotCornerRadius: 22,
+    slotCornerRadius: 8,
     spinDuration: 16,
-    gridColumns: 3,
+    gridColumns: 15,
     gridGap: 16,
   },
   'totem-wall': {
@@ -125,6 +144,35 @@ export const PERSPECTIVE_TEMPLATES: Record<PerspectiveTemplateKind, PerspectiveT
     spinDuration: 10,
     gridColumns: 3,
     gridGap: 16,
+  },
+  'sphere-wall': {
+    kind: 'sphere-wall',
+    label: 'Sphere Wall',
+    arrangement: 'sphere-interior',
+    animation: 'sway-y',
+    // Cards line the INSIDE of a hollow sphere centered exactly on the
+    // camera, all facing inward toward that same point (see
+    // sphereInteriorSlotTransforms). The container itself is placed at
+    // the active camera's own position (see
+    // insertPerspectiveTemplate's `cameraPos` handling), not a 2D
+    // canvas offset like every other template — so the container's own
+    // local origin IS both the camera position and the sphere's
+    // center. The curvature that reads as "standing inside a hollow
+    // shell of cards" comes from real perspective projection (a fixed
+    // angular size maps to a growing pixel size the further it sits
+    // from the camera's forward axis), not from any position fudge.
+    // The container sways gently (writeSwayKeyframes) rather than
+    // fully spinning.
+    slotCount: 160,
+    slotWidth: 70,
+    slotHeight: 54,
+    radius: 800,
+    slotColor: '#1c1c1e',
+    slotStrokeColor: '#3f3f46',
+    slotCornerRadius: 4,
+    spinDuration: 20,
+    gridColumns: 16,
+    gridGap: 10,
   },
 }
 
@@ -220,70 +268,81 @@ function gridSlotTransforms(
 }
 
 /**
- * A handful of horizontal, evenly-spaced rings stacked at different
- * heights and radii — like lines of latitude on a globe, or a disco
- * ball — rather than a Fibonacci-sphere scatter of individually-tilted
- * cards.
+ * Cards lining the INSIDE of a hollow sphere centered EXACTLY on the
+ * camera (the container's own local origin — see
+ * `insertPerspectiveTemplate`'s `cameraPos` handling, which places this
+ * template's container at the active camera's own world position). For
+ * every card, `position = sphereCenter + normalize(direction) * radius`
+ * where `direction` comes from real spherical coordinates — azimuth
+ * (`col` → longitude, left/right) and elevation (`row` → latitude,
+ * up/down) turned into a unit vector via sin/cos, not a flat x/y grid
+ * with a sagitta bent over it. Bounded to a patch of that sphere, NOT a
+ * full enclosing shell — the angular span (see azStepRad/elStepRad
+ * below) only covers as much of the sphere as this template's
+ * slotCount/gridColumns actually need.
  *
- * A dense Fibonacci sphere was the first design here and it looked
- * broken: Fibonacci sampling packs points arbitrarily close together
- * in azimuth, so some points always land almost exactly on the
- * "silhouette rim" as seen from the camera (where a flat card's
- * outward normal is perpendicular to the view direction) and
- * foreshorten to an invisible sliver. An *evenly-spaced* ring can't do
- * that — the worst-placed card is always at least half the ring's
- * angular step away from the rim, which is exactly why Card Tunnel (a
- * single such ring) already reads fine. Stacking several of these
- * proven-good rings at latitudes following a sphere's radius profile
- * (`bandRadius = radius * cos(latitude)`) gets the rounded "globe"
- * silhouette without reintroducing the sliver problem. Every card
- * stays upright (no rotationX tilt) — visually closer to a gyroscope
- * of rings than a literal geodesic sphere, but far more legible in a
- * renderer with no per-frame depth sort.
- *
- * Slots are still sorted back-to-front by z before returning: distinct
- * bands can still overlap in depth near the ring's front/back, so the
- * painter's-algorithm ordering fix from gridSlotTransforms /
- * sphericalTransforms still applies here.
+ * Each card's rotation makes its own local +Z axis equal
+ * `normalize(cameraPosition - cardPosition)` — since the camera sits
+ * at this local space's origin, that's just `normalize(-position)`,
+ * i.e. `-direction`. That means every card is exactly the same
+ * distance (`radius`) from the camera and exactly perpendicular to the
+ * camera ray that hits it — by itself, that sounds like it would
+ * produce zero foreshortening (and it does: no card's own shape is
+ * skewed by its position). The visible curvature instead comes from
+ * the perspective projection's radial stretch: a flat rectilinear
+ * camera maps a fixed angular size to a LARGER pixel size the further
+ * that angle sits from the camera's own forward axis (screen = f *
+ * tan(angle), not linear in angle) — so identically-sized, identically
+ * face-on cards still grow and skew (width grows ∝ 1/cos²(azimuth),
+ * height ∝ 1/cos(azimuth) off the horizontal axis alone) as they move
+ * toward the edges of the patch. That's real 3D perspective math doing
+ * the work, not a faked 2D distortion — it's the same effect that
+ * makes a wide-FOV rectilinear photo stretch things near its edges.
  */
-function bandsSlotTransforms(count: number, radius: number): DistributedTransform[] {
-  // Latitudes in degrees, north to south; kept off the exact poles
-  // (±90) since a ring's radius shrinks to 0 there anyway.
-  const latitudes = [62, 31, 0, -31, -62]
-  const bandRadii = latitudes.map((lat) => radius * Math.cos((lat * Math.PI) / 180))
-  const totalCircumference = bandRadii.reduce((sum, r) => sum + r, 0)
-  const counts = bandRadii.map((r) =>
-    Math.max(3, Math.round((r / totalCircumference) * count)),
-  )
-  // Rounding can drift the total off `count` by a couple of slots —
-  // correct it on the equator band (index 2), the least visually
-  // sensitive place for a slightly different card count.
-  const drift = count - counts.reduce((sum, c) => sum + c, 0)
-  counts[2] = Math.max(3, counts[2]! + drift)
-
+function sphereInteriorSlotTransforms(
+  count: number,
+  columns: number,
+  radius: number,
+  slotWidth: number,
+  slotHeight: number,
+  gap: number,
+): DistributedTransform[] {
+  const cols = Math.max(1, columns)
+  const rows = Math.ceil(count / cols)
+  // Arc-length spacing: the angular step per neighbor is chosen so
+  // radius * step ≈ slotWidth/slotHeight + gap, keeping physical card
+  // spacing on the shell consistent regardless of how tight or wide
+  // the radius is.
+  const azStepRad = radius > 0 ? (slotWidth + gap) / radius : 0
+  const elStepRad = radius > 0 ? (slotHeight + gap) / radius : 0
   const out: DistributedTransform[] = []
-  latitudes.forEach((lat, bandIndex) => {
-    const bandRadius = bandRadii[bandIndex]!
-    const bandCount = counts[bandIndex]!
-    const y = radius * Math.sin((lat * Math.PI) / 180)
-    // Offset alternating bands by half a step so cards don't all line
-    // up in vertical columns — reads as a woven ball rather than a
-    // stack of separate hoops.
-    const startAngle = bandIndex % 2 === 0 ? 0 : 180 / bandCount
-    const step = 360 / bandCount
-    for (let i = 0; i < bandCount; i++) {
-      const angle = startAngle + step * i
-      const rad = (angle * Math.PI) / 180
-      out.push({
-        x: bandRadius * Math.sin(rad),
-        y,
-        z: bandRadius * Math.cos(rad),
-        rotation: 0,
-        rotationX: 0,
-        rotationY: angle,
-      })
-    }
-  })
+  for (let i = 0; i < count; i++) {
+    const col = i % cols
+    const row = Math.floor(i / cols)
+    const phi = (col - (cols - 1) / 2) * azStepRad
+    const theta = ((rows - 1) / 2 - row) * elStepRad
+    const px = Math.sin(phi) * Math.cos(theta)
+    const py = Math.sin(theta)
+    const pz = Math.cos(phi) * Math.cos(theta)
+    // Rotation that points this card's local +Z at -( px, py, pz ) —
+    // i.e. exactly back at the camera, which sits at this local
+    // space's origin. Depends only on the unit direction, matching
+    // `normalize(cameraPosition - cardPosition)` exactly since
+    // cardPosition = radius * (px, py, pz) and cameraPosition = 0.
+    const rotationX = (Math.asin(py) * 180) / Math.PI
+    const rotationY = (Math.atan2(-px, -pz) * 180) / Math.PI
+    out.push({
+      x: radius * px,
+      y: radius * py,
+      z: radius * pz,
+      rotation: 0,
+      rotationX,
+      rotationY,
+    })
+  }
+  // Every card is equidistant from the camera by construction (see
+  // doc comment) — this sort is cosmetic but kept for a well-defined,
+  // deterministic paint order in the no-z-buffer renderer.
   out.sort((a, b) => b.z - a.z)
   return out
 }
@@ -298,12 +357,19 @@ function slotTransformsFor(
         { kind: 'ring', radius: params.radius, startAngle: 0, faceOutward: true },
         params.slotCount,
       )
-    case 'bands':
-      return bandsSlotTransforms(params.slotCount, params.radius)
     case 'grid':
       return gridSlotTransforms(
         params.slotCount,
         params.gridColumns,
+        params.slotWidth,
+        params.slotHeight,
+        params.gridGap,
+      )
+    case 'sphere-interior':
+      return sphereInteriorSlotTransforms(
+        params.slotCount,
+        params.gridColumns,
+        params.radius,
         params.slotWidth,
         params.slotHeight,
         params.gridGap,
@@ -314,6 +380,9 @@ function slotTransformsFor(
 /** A container big enough to fit the arrangement, for a sane default hit-box/bounding size. */
 export function containerSizeFor(spec: PerspectiveTemplateSpec, params: PerspectiveTemplateParams): number {
   if (spec.arrangement === 'grid') {
+    // Lays slots out on a literal evenly-spaced x/y grid (see
+    // gridSlotTransforms) — sizing off `radius` wouldn't apply here at
+    // all (grid arrangement doesn't use it).
     const cols = Math.max(1, params.gridColumns)
     const rows = Math.ceil(params.slotCount / cols)
     return Math.max(
@@ -344,8 +413,63 @@ function paramsFromSpec(spec: PerspectiveTemplateSpec): PerspectiveTemplateParam
  * current duration so it never visibly stops while scrubbing or on
  * loop-playback, however long the scene runs; re-run this after any
  * spinDuration edit or scene-duration change to keep the coverage
- * current. No-ops (and removes any existing spin track) for templates
- * whose `animation` isn't 'spin-y'.
+ * current.
+ */
+function writeSpinKeyframes(
+  api: SceneAPI,
+  containerId: NodeId,
+  startTime: number,
+  spinDuration: number,
+): void {
+  const sceneDuration = api.getMeta().duration
+  const cycles = Math.max(
+    1,
+    Math.ceil((sceneDuration - startTime) / spinDuration) + 1,
+  )
+  for (let i = 0; i <= cycles; i++) {
+    addKeyframe(api, containerId, 'transform.rotationY', startTime + i * spinDuration, i * 360)
+  }
+}
+
+/** Degrees the container sways to either side of center for `animation: 'sway-y'`. */
+const SWAY_AMPLITUDE = 6
+
+/**
+ * Writes a continuous, seamless back-and-forth sway on the container's
+ * rotationY — 0 → +amplitude → 0 → -amplitude → 0 → … — rather than an
+ * ever-increasing spin. A bounded sphere patch (see
+ * sphereInteriorSlotTransforms) only has cards on its front face; a full
+ * spin would rotate that face away from the camera for most of every
+ * cycle and expose bare empty space where the (nonexistent) back would
+ * be. Swaying within a modest amplitude keeps the grid's front
+ * perpetually facing roughly toward the camera — "the entire wall
+ * rotates slowly" without ever turning far enough to show anything but
+ * the wall.
+ */
+function writeSwayKeyframes(
+  api: SceneAPI,
+  containerId: NodeId,
+  startTime: number,
+  period: number,
+): void {
+  const sceneDuration = api.getMeta().duration
+  const quarterBeats = Math.max(
+    4,
+    (Math.ceil((sceneDuration - startTime) / period) + 1) * 4,
+  )
+  const quarterPeriod = period / 4
+  const pattern = [0, SWAY_AMPLITUDE, 0, -SWAY_AMPLITUDE]
+  for (let i = 0; i <= quarterBeats; i++) {
+    addKeyframe(api, containerId, 'transform.rotationY', startTime + i * quarterPeriod, pattern[i % 4]!)
+  }
+}
+
+/**
+ * Dispatches to the right animation writer for `spec.animation`. Always
+ * clears any existing rotationY track first (even for a template whose
+ * `animation` doesn't use it, in case its `kind` ever changes what it
+ * animates), then rewrites the one this template actually uses; a
+ * no-op for `'none'`.
  */
 function writeAnimationKeyframes(
   api: SceneAPI,
@@ -354,19 +478,15 @@ function writeAnimationKeyframes(
   startTime: number,
   spinDuration: number,
 ): void {
-  const existing = api
+  const existingSpin = api
     .getTracksForNode(containerId)
     .find((t) => t.propertyId === 'transform.rotationY')
-  if (existing) api.deleteTrack(existing.id)
-  if (spec.animation !== 'spin-y') return
+  if (existingSpin) api.deleteTrack(existingSpin.id)
 
-  const sceneDuration = api.getMeta().duration
-  const cycles = Math.max(
-    1,
-    Math.ceil((sceneDuration - startTime) / spinDuration) + 1,
-  )
-  for (let i = 0; i <= cycles; i++) {
-    addKeyframe(api, containerId, 'transform.rotationY', startTime + i * spinDuration, i * 360)
+  if (spec.animation === 'spin-y') {
+    writeSpinKeyframes(api, containerId, startTime, spinDuration)
+  } else if (spec.animation === 'sway-y') {
+    writeSwayKeyframes(api, containerId, startTime, spinDuration)
   }
 }
 
@@ -391,6 +511,15 @@ export function insertPerspectiveTemplate(
   api.doc.transact(() => {
     const size = containerSizeFor(spec, params)
     const name = uniqueNodeName(api, spec.label)
+    // A `sphere-interior` container's local origin is BOTH the camera
+    // position and the sphere's own center — every slot position is
+    // already expressed relative to it (see
+    // sphereInteriorSlotTransforms) — so unlike every other template,
+    // it's placed at the active camera's own position instead of `at`
+    // (a 2D canvas offset, meaningless for "sit where the camera
+    // sits"). Falls back to the origin if there's no active camera.
+    const cameraPos =
+      spec.arrangement === 'sphere-interior' ? api.getActiveCamera()?.transform : null
     containerId = api.createNode('frame', parentId, {
       name,
       position: 'absolute',
@@ -400,16 +529,20 @@ export function insertPerspectiveTemplate(
       perspectiveTemplate: params,
       transform: {
         ...IDENTITY_TRANSFORM,
-        x: at.x,
-        y: at.y,
+        x: cameraPos ? cameraPos.x : at.x,
+        y: cameraPos ? cameraPos.y : at.y,
+        z: cameraPos ? cameraPos.z : 0,
         rotationY: spec.arrangement === 'grid' ? GRID_DEFAULT_YAW : 0,
         renderMode: 'group3d',
       },
     })
 
     const transforms = slotTransformsFor(spec, params)
-    const centerX = size / 2 - params.slotWidth / 2
-    const centerY = size / 2 - params.slotHeight / 2
+    // sphere-interior slots are already camera-relative (centered on
+    // the container's own origin) — centering them again by the
+    // container's declared box size would shift them off-camera.
+    const centerX = spec.arrangement === 'sphere-interior' ? 0 : size / 2 - params.slotWidth / 2
+    const centerY = spec.arrangement === 'sphere-interior' ? 0 : size / 2 - params.slotHeight / 2
     transforms.forEach((t, i) => {
       api.createNode('frame', containerId, {
         name: `Slot ${i + 1}`,
@@ -422,6 +555,7 @@ export function insertPerspectiveTemplate(
           x: centerX + t.x,
           y: centerY + t.y,
           z: t.z,
+          rotation: t.rotation,
           rotationX: t.rotationX,
           rotationY: t.rotationY,
           renderMode: 'plane',
@@ -465,9 +599,16 @@ export function applyPerspectiveTemplateParams(
     }
     const remaining: Node[] = slots.slice(0, params.slotCount)
 
+    // Preserve the original start time (when the animation was first
+    // authored) rather than resetting it to 0 on every param edit.
+    const existingSpin = api
+      .getTracksForNode(containerId)
+      .find((t) => t.propertyId === 'transform.rotationY')
+    const startTime = existingSpin?.keyframes[0]?.time ?? 0
+
     const transforms = slotTransformsFor(spec, params)
-    const centerX = size / 2 - params.slotWidth / 2
-    const centerY = size / 2 - params.slotHeight / 2
+    const centerX = spec.arrangement === 'sphere-interior' ? 0 : size / 2 - params.slotWidth / 2
+    const centerY = spec.arrangement === 'sphere-interior' ? 0 : size / 2 - params.slotHeight / 2
 
     transforms.forEach((t, i) => {
       const existing = remaining[i]
@@ -476,6 +617,7 @@ export function applyPerspectiveTemplateParams(
         x: centerX + t.x,
         y: centerY + t.y,
         z: t.z,
+        rotation: t.rotation,
         rotationX: t.rotationX,
         rotationY: t.rotationY,
         renderMode: 'plane' as const,
@@ -508,12 +650,6 @@ export function applyPerspectiveTemplateParams(
       })
     })
 
-    // Preserve the original start time (when the animation was first
-    // authored) rather than resetting it to 0 on every param edit.
-    const existingSpin = api
-      .getTracksForNode(containerId)
-      .find((t) => t.propertyId === 'transform.rotationY')
-    const startTime = existingSpin?.keyframes[0]?.time ?? 0
     writeAnimationKeyframes(api, containerId, spec, startTime, params.spinDuration)
   })
 }

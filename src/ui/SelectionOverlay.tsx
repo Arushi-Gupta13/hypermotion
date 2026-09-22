@@ -8,6 +8,8 @@ import type { SolvedLayout } from '@/layout'
 import type { AnimatedValue } from '@/ui/hooks/useAnimatedValues'
 import type { InheritedAnim } from '@/ui/canvasRenderHelpers'
 import { ResizeHandles } from '@/ui/ResizeHandles'
+import { TiltHandle } from '@/ui/TiltHandle'
+import { renderModeEligibleNodes } from '@/ui/multiRenderMode'
 import { VectorEditOverlay } from '@/ui/VectorEditOverlay'
 import { GradientEditOverlay } from '@/ui/GradientEditOverlay'
 import { gradientEditStore } from '@/ui/gradientEditStore'
@@ -96,6 +98,12 @@ export function SelectionOverlay({
     'size' in handleNode &&
     !editingVector &&
     !isPerspectiveTemplateSlot(api, handleNode.id)
+  // Audio chips have a `size` (a fixed timeline footprint — see
+  // AudioNode's doc comment) so they pass `showHandles`, but tilting a
+  // non-visual chip in 3D is meaningless. Cameras are already excluded
+  // by `'size' in handleNode` above.
+  const showTiltHandle =
+    showHandles && !!handleNode && renderModeEligibleNodes([handleNode]).length > 0
 
   return (
     <>
@@ -220,12 +228,17 @@ export function SelectionOverlay({
                 />
               </svg>
             ) : isSingle && showHandles ? (
-              <ResizeHandles
-                nodeId={id}
-                rectWidth={rect.width}
-                rectHeight={rect.height}
-                zoom={zoom}
-              />
+              <>
+                <ResizeHandles
+                  nodeId={id}
+                  rectWidth={rect.width}
+                  rectHeight={rect.height}
+                  zoom={zoom}
+                />
+                {showTiltHandle ? (
+                  <TiltHandle nodeId={id} rectWidth={rect.width} zoom={zoom} />
+                ) : null}
+              </>
             ) : null}
             {isSingle && gradientEditTarget?.nodeId === id ? (
               <svg

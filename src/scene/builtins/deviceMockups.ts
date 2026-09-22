@@ -20,10 +20,18 @@ import { uniqueNodeName } from '@/scene/uniqueNodeName'
 export type DeviceMockupKind =
   | 'iphone17promax'
   | 'iphone17pro'
+  | 'iphone16promax'
   | 'iphone13'
   | 'iphonese'
   | 'galaxys24ultra'
   | 'galaxys24'
+  | 'macbookpro14'
+  | 'macbookpro16'
+  | 'ipadpro13'
+  | 'applewatchseries9'
+  | 'applewatchultra2'
+  | 'imac24'
+  | 'prodisplayxdr'
   | 'browser'
 
 /** How the top of the screen reads — the clearest visual split between eras/brands. */
@@ -31,7 +39,7 @@ type TopChrome = 'island' | 'notch' | 'punchhole' | 'none'
 
 export interface DeviceMockupSpec {
   label: string
-  family: 'iphone' | 'samsung' | 'browser'
+  family: 'iphone' | 'samsung' | 'macbook' | 'ipad' | 'watch' | 'imac' | 'display' | 'browser'
   width: number
   height: number
   cornerRadius: number
@@ -42,6 +50,17 @@ export interface DeviceMockupSpec {
   topChrome: TopChrome
   /** iPhone SE-style flat bezel: a physical home button below the screen. */
   homeButton: boolean
+  /**
+   * URL (served from `public/`) of a real scanned CC-BY 3D model to use for
+   * the final 3D render body, replacing the procedural bezel mesh built
+   * from the fields above — see `createDeviceMockupBodyMesh` /
+   * `deviceMockupGltfCache.ts`. The fields above still define the flat
+   * vector fallback (used for the 2D editor hit-box, and while/if the real
+   * model hasn't loaded), so they stay populated even when this is set.
+   * See NOTICE for each model's credit and license (CC-BY, attribution
+   * required).
+   */
+  glbUrl?: string
 }
 
 // Dimensions are stylized approximations (logical points), not pixel-exact
@@ -61,6 +80,7 @@ export const DEVICE_MOCKUP_SPECS: Record<DeviceMockupKind, DeviceMockupSpec> = {
     screenCornerRadius: 54,
     topChrome: 'island',
     homeButton: false,
+    glbUrl: '/models/mockups/iphone-17-pro-max.glb',
   },
   iphone17pro: {
     label: 'iPhone 17 Pro',
@@ -73,6 +93,20 @@ export const DEVICE_MOCKUP_SPECS: Record<DeviceMockupKind, DeviceMockupSpec> = {
     screenCornerRadius: 48,
     topChrome: 'island',
     homeButton: false,
+    glbUrl: '/models/mockups/iphone-17-pro.glb',
+  },
+  iphone16promax: {
+    label: 'iPhone 16 Pro Max',
+    family: 'iphone',
+    width: 430,
+    height: 932,
+    cornerRadius: 58,
+    bezelColor: '#0a0a0a',
+    screen: { x: 9, y: 9, width: 412, height: 914 },
+    screenCornerRadius: 50,
+    topChrome: 'island',
+    homeButton: false,
+    glbUrl: '/models/mockups/iphone-16-pro-max.glb',
   },
   iphone13: {
     label: 'iPhone 13',
@@ -131,6 +165,109 @@ export const DEVICE_MOCKUP_SPECS: Record<DeviceMockupKind, DeviceMockupSpec> = {
     topChrome: 'punchhole',
     homeButton: false,
   },
+  macbookpro14: {
+    label: 'MacBook Pro 14"',
+    family: 'macbook',
+    // Logical point resolution of the 14" MacBook Pro's own screen — the
+    // flat vector fallback only needs to cover the display, not the
+    // keyboard deck; the real model (once loaded) supplies the full body.
+    width: 1512,
+    height: 982,
+    cornerRadius: 20,
+    bezelColor: '#1d1d1f',
+    screen: { x: 14, y: 14, width: 1484, height: 954 },
+    screenCornerRadius: 14,
+    // Modern MacBook Pros have a small camera notch cut into the display
+    // itself — the same visual device 'notch' already models for phones.
+    topChrome: 'notch',
+    homeButton: false,
+    glbUrl: '/models/mockups/macbook-pro-14.glb',
+  },
+  macbookpro16: {
+    label: 'MacBook Pro 16"',
+    family: 'macbook',
+    width: 1728,
+    height: 1117,
+    cornerRadius: 20,
+    bezelColor: '#1d1d1f',
+    screen: { x: 16, y: 16, width: 1696, height: 1085 },
+    screenCornerRadius: 14,
+    topChrome: 'notch',
+    homeButton: false,
+    glbUrl: '/models/mockups/macbook-pro-16.glb',
+  },
+  ipadpro13: {
+    label: 'iPad Pro 13"',
+    family: 'ipad',
+    width: 1032,
+    height: 1376,
+    cornerRadius: 44,
+    bezelColor: '#1c1c1e',
+    screen: { x: 14, y: 14, width: 1004, height: 1348 },
+    screenCornerRadius: 34,
+    // iPad Pro's front camera is a plain circular punch-hole in the top
+    // bezel, not a notch or island.
+    topChrome: 'punchhole',
+    homeButton: false,
+    glbUrl: '/models/mockups/ipad-pro-13.glb',
+  },
+  applewatchseries9: {
+    label: 'Apple Watch Series 9',
+    family: 'watch',
+    width: 220,
+    height: 264,
+    // A watch face reads as a squircle, not a phone-style rounded rect —
+    // the corner radius here is deliberately large relative to width/height.
+    cornerRadius: 60,
+    bezelColor: '#1a1a1c',
+    screen: { x: 10, y: 10, width: 200, height: 244 },
+    screenCornerRadius: 50,
+    topChrome: 'none',
+    homeButton: false,
+    glbUrl: '/models/mockups/watch-series-9.glb',
+  },
+  applewatchultra2: {
+    label: 'Apple Watch Ultra 2',
+    family: 'watch',
+    width: 236,
+    height: 284,
+    cornerRadius: 56,
+    // Titanium case reads lighter/warmer than the standard Series 9's
+    // aluminum/steel body.
+    bezelColor: '#3a3a3c',
+    screen: { x: 12, y: 12, width: 212, height: 260 },
+    screenCornerRadius: 46,
+    topChrome: 'none',
+    homeButton: false,
+    glbUrl: '/models/mockups/watch-ultra-2.glb',
+  },
+  imac24: {
+    label: 'iMac 24"',
+    family: 'imac',
+    width: 1120,
+    height: 656,
+    cornerRadius: 20,
+    bezelColor: '#f0f0f0',
+    screen: { x: 20, y: 20, width: 1080, height: 596 },
+    screenCornerRadius: 10,
+    topChrome: 'punchhole',
+    homeButton: false,
+    glbUrl: '/models/mockups/imac-24.glb',
+  },
+  prodisplayxdr: {
+    label: 'Pro Display XDR',
+    family: 'display',
+    width: 1504,
+    height: 846,
+    cornerRadius: 16,
+    bezelColor: '#e4e4e4',
+    screen: { x: 8, y: 8, width: 1488, height: 830 },
+    screenCornerRadius: 8,
+    // A standalone display has no built-in camera.
+    topChrome: 'none',
+    homeButton: false,
+    glbUrl: '/models/mockups/pro-display-xdr.glb',
+  },
   browser: {
     label: 'Browser',
     family: 'browser',
@@ -147,8 +284,12 @@ export const DEVICE_MOCKUP_SPECS: Record<DeviceMockupKind, DeviceMockupSpec> = {
 
 /** Grouped for the picker — brand, then other chrome. */
 export const DEVICE_MOCKUP_GROUPS: { label: string; kinds: DeviceMockupKind[] }[] = [
-  { label: 'iPhone', kinds: ['iphone17promax', 'iphone17pro', 'iphone13', 'iphonese'] },
+  { label: 'iPhone', kinds: ['iphone17promax', 'iphone17pro', 'iphone16promax', 'iphone13', 'iphonese'] },
   { label: 'Samsung Galaxy', kinds: ['galaxys24ultra', 'galaxys24'] },
+  { label: 'MacBook', kinds: ['macbookpro16', 'macbookpro14'] },
+  { label: 'iPad', kinds: ['ipadpro13'] },
+  { label: 'Apple Watch', kinds: ['applewatchultra2', 'applewatchseries9'] },
+  { label: 'Display', kinds: ['imac24', 'prodisplayxdr'] },
   { label: 'Browser', kinds: ['browser'] },
 ]
 
@@ -418,6 +559,17 @@ const IDENTITY_TRANSFORM = {
 }
 
 /**
+ * True for every mockup kind that gets a real 3D body mesh in the final
+ * render — the original iPhone-family procedural PBR treatment, plus any
+ * kind with a real scanned `glbUrl` model — instead of the plain flat
+ * vector bezel. Single source of truth shared with
+ * `ThreeSceneViewport.tsx`'s substitution gate, so the two can't drift.
+ */
+export function mockupHasRealBody(spec: DeviceMockupSpec): boolean {
+  return spec.family === 'iphone' || !!spec.glbUrl
+}
+
+/**
  * Insert one device mockup at `at`. Each insertion is an independent,
  * ordinary frame group — not a shared component/instance — so users can
  * freely restyle or resize one without affecting any other mockup already
@@ -447,20 +599,38 @@ export function insertDeviceMockup(
       appearance: {
         ...EMPTY_APPEARANCE,
         // Soft ambient shadow so the mockup reads as sitting in front of
-        // whatever's behind it, instead of pasted flat onto the canvas.
-        effects: [
-          {
-            kind: 'shadow',
-            color: 'oklch(0.15 0.01 280 / 0.35)',
-            offsetX: 0,
-            offsetY: spec.height * 0.03,
-            blur: spec.width * 0.12,
-            spread: -(spec.width * 0.03),
-            visible: true,
-          },
-        ],
+        // whatever's behind it, instead of pasted flat onto the canvas —
+        // EXCEPT for a mockup that gets a real 3D body (iPhone-family
+        // procedural PBR, or any kind with `glbUrl`): a visible layer
+        // effect on a frame with children forces the whole subtree to
+        // rasterize as one flat texture (`nodeEffectsWrapSubtree` in
+        // layerEffects.ts), which would silently override the `group3d`
+        // below and make the Bezel plane this body mesh needs never
+        // exist. Those mockups get their depth from the body's own real
+        // geometry instead of a faked shadow.
+        effects: mockupHasRealBody(spec)
+          ? []
+          : [
+              {
+                kind: 'shadow',
+                color: 'oklch(0.15 0.01 280 / 0.35)',
+                offsetX: 0,
+                offsetY: spec.height * 0.03,
+                blur: spec.width * 0.12,
+                spread: -(spec.width * 0.03),
+                visible: true,
+              },
+            ],
       },
-      transform: { ...IDENTITY_TRANSFORM, x: at.x, y: at.y },
+      // 'group3d' is what makes each child (Bezel, Screen, any top
+      // chrome) promote to its OWN plane instead of getting flattened
+      // into one shared rasterized texture (see `shouldEmitPlane` in
+      // scene3d.ts, which only promotes a non-root-child node when its
+      // OWN renderMode is 'plane'/'group3d' or its PARENT's is
+      // 'group3d') — without this, the Bezel is never its own plane, so
+      // ThreeSceneViewport's PBR/GLB body-mesh substitution (which looks
+      // specifically for a "Bezel" plane) never has anything to match.
+      transform: { ...IDENTITY_TRANSFORM, x: at.x, y: at.y, renderMode: 'group3d' },
     })
 
     // Child index 0 is frontmost in this app's layer/paint order (see

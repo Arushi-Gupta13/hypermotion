@@ -2,7 +2,7 @@
 
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
-import type { DeviceMockupSpec } from '@/scene/builtins/deviceMockups'
+import type { DeviceMockupKind, DeviceMockupSpec } from '@/scene/builtins/deviceMockups'
 
 /** Phone-body thickness, in this app's px-ish scene units. */
 const BODY_DEPTH = 16
@@ -76,10 +76,138 @@ export function createDeviceMockupBodyMesh(spec: DeviceMockupSpec): THREE.Group 
   )
   group.add(glass)
 
+  // Every geometry/material here was created fresh for this one instance
+  // (unlike the GLB path below, which shares cached, loaded resources
+  // across every instance of the same device) — safe for
+  // disposeDeviceMockupBodyMesh to destroy outright.
+  group.userData.ownsResources = true
+  return group
+}
+
+/** How the loaded model's local axes are nudged to match this app's plane convention (local +Z is the front, +X right, +Y down) and to line its screen up with the flat Screen-frame plane every mockup already composites on top. */
+export interface MockupModelAnchor {
+  scale: number
+  position: THREE.Vector3
+  rotationXDeg?: number
+  rotationYDeg?: number
+  rotationZDeg?: number
+}
+
+// Prefer a mesh actually named for the display over one merely named for
+// glass — a phone's rear camera lens is glass too, and matching "glass"
+// first would anchor to that instead of the screen. Checked in order.
+const SCREEN_MESH_NAME_PATTERN = /screen|display/i
+const GLASS_MESH_NAME_PATTERN = /glass/i
+
+function findNamedMesh(root: THREE.Object3D, pattern: RegExp): THREE.Object3D | null {
+  let found: THREE.Object3D | null = null
+  root.traverse((child) => {
+    if (!found && pattern.test(child.name)) found = child
+  })
+  return found
+}
+
+/**
+ * Hand-tuned anchors for models whose mesh names give
+ * `autoDetectMockupAnchor` nothing to search for (several of these
+ * Sketchfab scans use opaque procedural names like `Object_12` or random
+ * hashes, not "Screen"/"Glass") — determined by loading the model and
+ * visually comparing it against the flat Screen-frame plane every mockup
+ * composites on top. Empty until a kind is actually found to need one;
+ * add entries here as specific devices are tuned.
+ */
+const MOCKUP_MODEL_ANCHOR_OVERRIDES: Partial<Record<DeviceMockupKind, MockupModelAnchor>> = {}
+
+/**
+ * Best-effort anchor for a loaded device model: find a mesh named for the
+ * screen (or, failing that, the glass) and scale/position the whole model
+ * so that mesh's real-world width matches `spec.screen.width` and its
+ * center lands where the flat Screen-frame plane's center already sits
+ * (see `glass.position` above — same formula). Falls back to fitting the
+ * model's own overall bounding box when no such mesh exists at all, so a
+ * device with opaque mesh names still renders at a plausible size instead
+ * of at whatever arbitrary scale it was authored in.
+ */
+export function autoDetectMockupAnchor(
+  model: THREE.Object3D,
+  spec: DeviceMockupSpec,
+): MockupModelAnchor {
+  // `model` was just loaded and has never been part of a rendered scene
+  // graph, so descendant `matrixWorld`s may still be stale identity
+  // matrices rather than reflecting the file's authored local
+  // transforms/scales — force them current before measuring, or the
+  // computed box (and the scale/position derived from it) comes out
+  // wrong by whatever factor those un-applied transforms represent.
+  model.updateMatrixWorld(true)
+  const referenceNode =
+    findNamedMesh(model, SCREEN_MESH_NAME_PATTERN) ??
+    findNamedMesh(model, GLASS_MESH_NAME_PATTERN)
+  const box = new THREE.Box3().setFromObject(referenceNode ?? model)
+  const size = box.getSize(new THREE.Vector3())
+  const center = box.getCenter(new THREE.Vector3())
+  const referenceWidth = size.x > 0.0001 ? size.x : 1
+  const scale = spec.screen.width / referenceWidth
+  const desiredCenterX = spec.screen.x + spec.screen.width / 2 - spec.width / 2
+  const desiredCenterY = spec.screen.y + spec.screen.height / 2 - spec.height / 2
+  return {
+    scale,
+    // GLTF/three world is Y-up; this app's flat spec coordinates grow
+    // downward (screen convention) — flip Y so the scaled-and-offset
+    // model lands right-side-up in our local space.
+    position: new THREE.Vector3(
+      desiredCenterX - center.x * scale,
+      desiredCenterY + center.y * scale,
+      -center.z * scale,
+    ),
+  }
+}
+
+/**
+ * Real scanned CC-BY device body — the loaded GLTF scene, cloned (so
+ * multiple mockup instances of the same device don't fight over one
+ * shared transform — see `getCachedMockupModel`'s doc comment) and
+ * anchored so its screen sits where the flat Screen-frame plane already
+ * expects content, exactly like the procedural body's `glass` plate.
+ */
+export function createDeviceMockupBodyMeshFromModel(
+  model: THREE.Group,
+  spec: DeviceMockupSpec,
+  kind: DeviceMockupKind,
+): THREE.Group {
+  const group = new THREE.Group()
+  group.name = 'Bezel (GLB)'
+  const instance = model.clone(true)
+  const anchor = MOCKUP_MODEL_ANCHOR_OVERRIDES[kind] ?? autoDetectMockupAnchor(model, spec)
+  instance.scale.setScalar(anchor.scale)
+  instance.position.copy(anchor.position)
+  if (anchor.rotationXDeg) instance.rotateX(THREE.MathUtils.degToRad(anchor.rotationXDeg))
+  if (anchor.rotationYDeg) instance.rotateY(THREE.MathUtils.degToRad(anchor.rotationYDeg))
+  if (anchor.rotationZDeg) instance.rotateZ(THREE.MathUtils.degToRad(anchor.rotationZDeg))
+  // Every other layer in this compositor stacks by draw order alone (see
+  // bodyMaterial's comment above) — a real GLTF export's materials
+  // default to normal depth-testing, which would let this body occlude
+  // or be occluded by unrelated layers based on raw GPU depth instead of
+  // the app's paint order. Mutating the shared cached material is
+  // intentional and cheap: every instance of this device wants the same
+  // setting, so there's nothing to keep separate per clone.
+  instance.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return
+    const materials = Array.isArray(child.material) ? child.material : [child.material]
+    for (const material of materials) {
+      material.depthTest = false
+      material.depthWrite = false
+    }
+  })
+  group.add(instance)
+  // This instance's geometries/materials are shared with the cached
+  // original model (and every other instance cloned from it) — disposing
+  // them here would break every other mockup using the same device.
+  group.userData.ownsResources = false
   return group
 }
 
 export function disposeDeviceMockupBodyMesh(group: THREE.Group): void {
+  if (group.userData.ownsResources === false) return
   group.traverse((child) => {
     if (!(child instanceof THREE.Mesh)) return
     child.geometry.dispose()

@@ -114,16 +114,33 @@ describe('device mockup builtins', () => {
     expect(punchHole.vector.items[0]?.id).toBe('punch-hole')
   })
 
-  it('gives the mockup an ambient drop shadow so it reads as sitting above the canvas', () => {
+  it('gives a flat-vector-only mockup (no real 3D body) an ambient drop shadow so it reads as sitting above the canvas', () => {
     const api = createSceneAPI()
     const rootId = api.createNode('frame', null, {
       name: 'Artboard',
       size: { width: 1920, height: 1080 },
     })
-    const outerId = insertDeviceMockup(api, rootId, 'iphone13', { x: 0, y: 0 })
+    // Samsung/Browser kinds have no `glbUrl` and aren't iPhone-family, so
+    // they never get a real 3D body — the faked shadow is the only depth
+    // cue they have.
+    const outerId = insertDeviceMockup(api, rootId, 'galaxys24', { x: 0, y: 0 })
     const outer = api.getNode(outerId) as FrameNode
     expect(outer.appearance.effects).toHaveLength(1)
     expect(outer.appearance.effects[0]).toMatchObject({ kind: 'shadow', visible: true })
+  })
+
+  it('skips the faked ambient shadow for a mockup that gets a real 3D body — a visible effect on a frame with children would force the whole subtree to rasterize as one flat texture, hiding the Bezel plane the real body substitution needs', () => {
+    const api = createSceneAPI()
+    const rootId = api.createNode('frame', null, {
+      name: 'Artboard',
+      size: { width: 1920, height: 1080 },
+    })
+    for (const kind of ['iphone13', 'iphone17promax'] as const) {
+      const outerId = insertDeviceMockup(api, rootId, kind, { x: 0, y: 0 })
+      const outer = api.getNode(outerId) as FrameNode
+      expect(outer.appearance.effects).toHaveLength(0)
+      expect(outer.transform.renderMode).toBe('group3d')
+    }
   })
 
   it('uses iPhone SE\'s real 375×667 UIKit point resolution for the screen', () => {

@@ -99,41 +99,49 @@ function PerspectiveTemplateGlyph({ kind }: { kind: PerspectiveTemplateKind }) {
     )
   }
   if (kind === 'orbit-globe') {
-    // Stacked horizontal latitude rings, narrowing toward the top and
-    // bottom — matches the actual template's geometry (bandsSlotTransforms
-    // in perspectiveTemplates.ts): a handful of evenly-spaced rings
-    // rather than a scattered sphere of points, so each card always has
-    // clearance from the camera-facing silhouette edge instead of some
-    // landing edge-on as a sliver.
-    const latitudes = [62, 31, 0, -31, -62]
-    const globeRadius = 15
-    const bands = latitudes.map((lat) => {
-      const rad = (lat * Math.PI) / 180
-      return { cy: 20 - Math.sin(rad) * globeRadius, rx: Math.cos(rad) * globeRadius, count: lat === 0 ? 8 : 6 }
-    })
+    // A dense grid of small rectangular cards, packed tighter toward
+    // the center and thinning slightly toward the edges — matches the
+    // actual template's geometry (sphereInteriorSlotTransforms in
+    // perspectiveTemplates.ts, the same concave "camera inside a
+    // hollow shell" arrangement sphere-wall uses, just denser and
+    // smaller-carded). Deliberately rectangles, not circles: the old
+    // glyph (and the old template itself) used a corner radius exactly
+    // half the slot size, which rendered as circular dots rather than
+    // cards.
+    const cols = 9
+    const rows = 7
+    const cell = 3.4
+    const gapX = 0.7
+    const gapY = 0.8
+    const totalW = cols * cell + (cols - 1) * gapX
+    const totalH = rows * cell + (rows - 1) * gapY
+    const originX = 20 - totalW / 2
+    const originY = 20 - totalH / 2
     return (
       <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true">
-        <circle cx="20" cy="20" r={globeRadius} fill="none" stroke="var(--color-accent)" strokeOpacity="0.12" />
-        {bands.map((band, bi) =>
-          Array.from({ length: band.count }).map((_, i) => {
-            const t = i / band.count
-            // Only draw the near half of each ring's ellipse (a dot
-            // sweeping behind the ring wouldn't read at this size).
-            const angle = Math.PI * 0.15 + t * Math.PI * 0.7
-            const cx = 20 + Math.sin(angle) * band.rx
-            const depth = Math.cos(angle)
-            return (
-              <circle
-                key={`${bi}-${i}`}
-                cx={cx}
-                cy={band.cy}
-                r={1.5 + depth * 0.6}
-                fill="var(--color-accent)"
-                opacity={0.45 + depth * 0.35}
-              />
-            )
-          }),
-        )}
+        {Array.from({ length: cols * rows }).map((_, i) => {
+          const col = i % cols
+          const row = Math.floor(i / cols)
+          const colOffset = (col - (cols - 1) / 2) / (cols / 2)
+          const rowOffset = (row - (rows - 1) / 2) / (rows / 2)
+          const faceOn = Math.cos((colOffset * Math.PI) / 2.4) * Math.cos((rowOffset * Math.PI) / 2.4)
+          const w = cell * (0.6 + 0.4 * faceOn)
+          const h = cell * (0.6 + 0.4 * faceOn)
+          const cx = originX + col * (cell + gapX) + cell / 2
+          const cy = originY + row * (cell + gapY) + cell / 2
+          return (
+            <rect
+              key={i}
+              x={cx - w / 2}
+              y={cy - h / 2}
+              width={w}
+              height={h}
+              rx={0.5}
+              fill="var(--color-accent)"
+              opacity={0.35 + 0.45 * faceOn}
+            />
+          )
+        })}
       </svg>
     )
   }
@@ -166,6 +174,50 @@ function PerspectiveTemplateGlyph({ kind }: { kind: PerspectiveTemplateKind }) {
               rx={1.2}
               fill="var(--color-accent)"
               opacity={0.35 + 0.15 * depthScale * 2}
+            />
+          )
+        })}
+      </svg>
+    )
+  }
+  if (kind === 'sphere-wall') {
+    // A grid wrapped around a sphere — columns stay aligned (same
+    // azimuth in every row), but shrink toward the sides via a cosine
+    // falloff, and rows dome slightly toward the top/bottom — a
+    // stylized stand-in for the real template's concave, camera-inside
+    // geometry (sphereInteriorSlotTransforms), curved in both
+    // directions, not a flat cylinder or flat wall.
+    const cols = 7
+    const rows = 5
+    const cell = 4.6
+    const gapX = 0.9
+    const gapY = 1.1
+    const totalW = cols * cell + (cols - 1) * gapX
+    const totalH = rows * cell * 0.75 + (rows - 1) * gapY
+    const originX = 20 - totalW / 2
+    const originY = 20 - totalH / 2
+    return (
+      <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true">
+        {Array.from({ length: cols * rows }).map((_, i) => {
+          const col = i % cols
+          const row = Math.floor(i / cols)
+          const colOffset = (col - (cols - 1) / 2) / (cols / 2)
+          const rowOffset = (row - (rows - 1) / 2) / (rows / 2)
+          const faceOn = Math.cos((colOffset * Math.PI) / 2.2) * Math.cos((rowOffset * Math.PI) / 2.6)
+          const w = cell * (0.45 + 0.55 * faceOn)
+          const h = cell * 0.75
+          const cx = originX + col * (cell + gapX) + cell / 2
+          const cy = originY + row * (cell * 0.75 + gapY) + h / 2
+          return (
+            <rect
+              key={i}
+              x={cx - w / 2}
+              y={cy - h / 2}
+              width={w}
+              height={h}
+              rx={0.6}
+              fill="var(--color-accent)"
+              opacity={0.28 + 0.5 * faceOn}
             />
           )
         })}

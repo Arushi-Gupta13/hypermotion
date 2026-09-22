@@ -240,69 +240,136 @@ describe('isPerspectiveTemplateSlot', () => {
   })
 })
 
-describe('orbit-globe (bands arrangement)', () => {
-  it('stacks slots into multiple horizontal latitude bands and keeps spinning', () => {
+describe('orbit-globe (interior sphere patch, same concave geometry as sphere-wall)', () => {
+  function localForward(rotationX: number, rotationY: number): [number, number, number] {
+    const rx = (rotationX * Math.PI) / 180
+    const ry = (rotationY * Math.PI) / 180
+    const y1 = -Math.sin(rx)
+    const z1 = Math.cos(rx)
+    return [z1 * Math.sin(ry), y1, z1 * Math.cos(ry)]
+  }
+
+  it('places the container at the active camera position, not at the given 2D offset', () => {
+    const api = createSceneAPI()
+    const rootId = api.createNode('frame', null, { size: { width: 1920, height: 1080 } })
+    const camera = api.getActiveCamera()!
+    const containerId = insertPerspectiveTemplate(api, rootId, 'orbit-globe', { x: 12345, y: -6789 })
+    const container = api.getNode(containerId)!
+    expect(container.transform.x).toBe(camera.transform.x)
+    expect(container.transform.y).toBe(camera.transform.y)
+    expect(container.transform.z).toBe(camera.transform.z)
+  })
+
+  it('lines every card up on a true rectangular grid — no two cards flattened into circles or scattered like orbiting dots', () => {
     const api = createSceneAPI()
     const rootId = api.createNode('frame', null, { size: { width: 1920, height: 1080 } })
     const spec = PERSPECTIVE_TEMPLATES['orbit-globe']
+    const cols = spec.gridColumns
+    const rows = Math.ceil(spec.slotCount / cols)
+    // 15 columns × 9 rows — odd × odd, so there's an exact center slot.
+    expect(cols).toBe(15)
+    expect(rows).toBe(9)
 
     const containerId = insertPerspectiveTemplate(api, rootId, 'orbit-globe', { x: 0, y: 0 })
     const slots = api.getChildren(containerId)
     expect(slots).toHaveLength(spec.slotCount)
 
-    // Several distinct heights (latitude bands), unlike the flat
-    // single-height ring — proves this isn't just reusing ring math.
-    const heights = new Set(slots.map((s) => Math.round(s.transform.y)))
-    expect(heights.size).toBeGreaterThan(1)
+    // Rectangular cards, not circles: corner radius must stay well
+    // short of half the slot size (the old bug rounded corners into a
+    // full circle).
+    expect(spec.slotCornerRadius).toBeLessThan(Math.min(spec.slotWidth, spec.slotHeight) / 2)
 
-    // No card is tilted around X — every band stays upright, which is
-    // exactly what keeps individual cards from foreshortening down to
-    // an edge-on sliver.
     for (const slot of slots) {
-      expect(slot.transform.rotationX).toBe(0)
+      expect((slot as FrameNode).size.width).toBe(spec.slotWidth)
+      expect((slot as FrameNode).size.height).toBe(spec.slotHeight)
+      // Every card sits on the sphere centered exactly on the camera —
+      // position = normalize(direction) * radius — a real sphere, not
+      // a flat grid or a radial/orbit scatter.
+      const dist = Math.hypot(slot.transform.x, slot.transform.y, slot.transform.z)
+      expect(dist).toBeCloseTo(spec.radius, 1)
     }
+
+    // Distinct rows, and the same set of azimuth angles repeats in
+    // every row — an aligned grid, not a scatter of points.
+    const anglesByHeight = new Map<number, number[]>()
+    for (const slot of slots) {
+      const y = Math.round(slot.transform.y)
+      const list = anglesByHeight.get(y) ?? []
+      list.push(Math.round(slot.transform.rotationY))
+      anglesByHeight.set(y, list)
+    }
+    expect(anglesByHeight.size).toBe(rows)
+    const rowAngleSets = [...anglesByHeight.values()].map((list) => [...list].sort((a, b) => a - b))
+    for (let i = 1; i < rowAngleSets.length; i++) {
+      expect(rowAngleSets[i]).toEqual(rowAngleSets[0])
+    }
+    expect(rowAngleSets[0]!.length).toBe(cols)
+
+    // An exact center slot exists at phi=0, theta=0 — dead ahead of
+    // the camera on both axes, not merely close to it. (Its exact
+    // rotation values are the ones that spin its default +Z-facing
+    // pose 180° around to point back at the camera — verified
+    // precisely by the normal-direction test below, not by a specific
+    // rotationX/rotationY number here.)
+    const centerSlot = slots.find(
+      (s) => Math.round(s.transform.x) === 0 && Math.round(s.transform.y) === 0,
+    )
+    expect(centerSlot).toBeDefined()
+
+    // The horizontal span (leftmost to rightmost column, center to
+    // center) and vertical span land in the requested ranges.
+    const azStepRad = (spec.slotWidth + spec.gridGap) / spec.radius
+    const elStepRad = (spec.slotHeight + spec.gridGap) / spec.radius
+    const horizontalSpanDeg = ((cols - 1) * azStepRad * 180) / Math.PI
+    const verticalSpanDeg = ((rows - 1) * elStepRad * 180) / Math.PI
+    expect(horizontalSpanDeg).toBeGreaterThanOrEqual(100)
+    expect(horizontalSpanDeg).toBeLessThanOrEqual(120)
+    expect(verticalSpanDeg).toBeGreaterThanOrEqual(60)
+    expect(verticalSpanDeg).toBeLessThanOrEqual(75)
+  })
+
+  it("orients every card's face exactly at normalize(cameraPosition - cardPosition) — every card faces the camera, not all the same direction", () => {
+    const api = createSceneAPI()
+    const rootId = api.createNode('frame', null, { size: { width: 1920, height: 1080 } })
+    const containerId = insertPerspectiveTemplate(api, rootId, 'orbit-globe', { x: 0, y: 0 })
+    const slots = api.getChildren(containerId)
+
+    const rotations = new Set<string>()
+    for (const slot of slots) {
+      const { x, y, z, rotationX, rotationY } = slot.transform
+      // Camera sits at this local space's origin, so
+      // normalize(cameraPosition - cardPosition) is just normalize(-position).
+      const dist = Math.hypot(x, y, z) || 1
+      const towardCamera = [-x / dist, -y / dist, -z / dist]
+      const forward = localForward(rotationX, rotationY)
+      const dot =
+        forward[0] * towardCamera[0] + forward[1] * towardCamera[1] + forward[2] * towardCamera[2]
+      expect(dot).toBeCloseTo(1, 5)
+      rotations.add(`${Math.round(rotationX)},${Math.round(rotationY)}`)
+    }
+    // Cards progressively rotate toward the sides/top/bottom by
+    // spherical position — not all facing the same fixed direction.
+    expect(rotations.size).toBeGreaterThan(1)
+  })
+
+  it('sways the container back and forth instead of fully spinning', () => {
+    const api = createSceneAPI()
+    const rootId = api.createNode('frame', null, { size: { width: 1920, height: 1080 } })
+    const containerId = insertPerspectiveTemplate(api, rootId, 'orbit-globe', { x: 0, y: 0 }, 2)
 
     const track = api
       .getTracksForNode(containerId)
       .find((t) => t.propertyId === 'transform.rotationY')
-    expect(track!.keyframes.length).toBeGreaterThanOrEqual(2)
-  })
-
-  it('gives every card at least half a ring-step of angular clearance from the camera-facing silhouette rim', () => {
-    const api = createSceneAPI()
-    const rootId = api.createNode('frame', null, { size: { width: 1920, height: 1080 } })
-    const spec = PERSPECTIVE_TEMPLATES['orbit-globe']
-    const containerId = insertPerspectiveTemplate(api, rootId, 'orbit-globe', { x: 0, y: 0 })
-    const slots = api.getChildren(containerId)
-
-    // Slot x (but not z) is offset by the container's own centering
-    // math at insert time; undo that so angles are measured around the
-    // ring's true center, not the container's top-left-relative origin.
-    const containerSize = (api.getNode(containerId) as FrameNode).size.width as number
-    const centerX = containerSize / 2 - spec.slotWidth / 2
-
-    // Group slots by height (band) and, within each band, verify no
-    // two cards are closer together in angle than roughly the band's
-    // own even spacing would allow — i.e. it's a set of evenly-spaced
-    // rings, not a dense scatter where some points can land arbitrarily
-    // close to the rim (the bug in the Fibonacci-sphere first pass).
-    const byHeight = new Map<number, number[]>()
-    for (const slot of slots) {
-      const y = Math.round(slot.transform.y)
-      const angle = (Math.atan2(slot.transform.x - centerX, slot.transform.z) * 180) / Math.PI
-      const list = byHeight.get(y) ?? []
-      list.push(angle)
-      byHeight.set(y, list)
+    expect(track).toBeDefined()
+    expect(track!.keyframes[0]).toMatchObject({ time: 2, value: 0 })
+    // A full spin would rotate this bounded patch away from the camera
+    // and expose bare space where there's no "back" — sway keeps it
+    // facing roughly forward instead.
+    for (const kf of track!.keyframes) {
+      expect(Math.abs(kf.value as number)).toBeLessThanOrEqual(15)
     }
-    for (const angles of byHeight.values()) {
-      angles.sort((a, b) => a - b)
-      const expectedStep = 360 / angles.length
-      for (let i = 0; i < angles.length; i++) {
-        const next = angles[(i + 1) % angles.length]!
-        const gap = ((next - angles[i]! + 540) % 360) - 180
-        expect(Math.abs(gap)).toBeGreaterThan(expectedStep * 0.9)
-      }
-    }
+    const lastKeyframe = track!.keyframes[track!.keyframes.length - 1]!
+    expect(lastKeyframe.time).toBeGreaterThanOrEqual(api.getMeta().duration)
   })
 })
 
@@ -379,6 +446,123 @@ describe('totem-wall (grid arrangement, no spin)', () => {
       api.getChildren(containerId).map((s) => Math.round(s.transform.z)),
     )
     expect(depths.size).toBe(5)
+  })
+})
+
+describe('sphere-wall (interior sphere patch — camera near, not exactly at, the shell center)', () => {
+  /** Same rotateX-then-rotateY convention the renderer uses (see gridDistribution.ts's ringTransforms/scene3d.ts) — rotates local +Z by rotationX then rotationY. */
+  function localForward(rotationX: number, rotationY: number): [number, number, number] {
+    const rx = (rotationX * Math.PI) / 180
+    const ry = (rotationY * Math.PI) / 180
+    // rotateX around local X: (0,0,1) -> (0, -sin(rx), cos(rx))
+    const y1 = -Math.sin(rx)
+    const z1 = Math.cos(rx)
+    // rotateY around Y: (0, y1, z1) -> (z1*sin(ry), y1, z1*cos(ry))
+    return [z1 * Math.sin(ry), y1, z1 * Math.cos(ry)]
+  }
+
+  it('places the container at the active camera position, not at the given 2D offset', () => {
+    const api = createSceneAPI()
+    const rootId = api.createNode('frame', null, { size: { width: 1920, height: 1080 } })
+    const camera = api.getActiveCamera()!
+    const containerId = insertPerspectiveTemplate(api, rootId, 'sphere-wall', { x: 12345, y: -6789 })
+    const container = api.getNode(containerId)!
+    expect(container.transform.x).toBe(camera.transform.x)
+    expect(container.transform.y).toBe(camera.transform.y)
+    expect(container.transform.z).toBe(camera.transform.z)
+  })
+
+  it('lines every tile up on the same shell, radius away from the camera-centered origin', () => {
+    const api = createSceneAPI()
+    const rootId = api.createNode('frame', null, { size: { width: 1920, height: 1080 } })
+    const spec = PERSPECTIVE_TEMPLATES['sphere-wall']
+    const cols = spec.gridColumns
+    const rows = Math.ceil(spec.slotCount / cols)
+
+    const containerId = insertPerspectiveTemplate(api, rootId, 'sphere-wall', { x: 0, y: 0 })
+    const slots = api.getChildren(containerId)
+    expect(slots).toHaveLength(spec.slotCount)
+
+    for (const slot of slots) {
+      expect((slot as FrameNode).size.width).toBe(spec.slotWidth)
+      expect((slot as FrameNode).size.height).toBe(spec.slotHeight)
+      expect(slot.transform.scaleX).toBe(1)
+      expect(slot.transform.scaleY).toBe(1)
+      expect(slot.transform.rotation).toBe(0)
+      // Interior slot positions are already camera-relative — no
+      // container-box centering offset applied to them, and the
+      // sphere's center IS the camera-relative origin: position =
+      // normalize(direction) * radius, so every tile sits exactly
+      // `radius` away from that origin.
+      const dist = Math.hypot(slot.transform.x, slot.transform.y, slot.transform.z)
+      expect(dist).toBeCloseTo(spec.radius, 1)
+    }
+
+    // Distinct rows.
+    const heights = new Set(slots.map((s) => Math.round(s.transform.y)))
+    expect(heights.size).toBe(rows)
+
+    // Columns line up across rows: the same set of rotationY angles
+    // repeats in every row — an aligned grid, not a scatter.
+    const anglesByHeight = new Map<number, number[]>()
+    for (const slot of slots) {
+      const y = Math.round(slot.transform.y)
+      const list = anglesByHeight.get(y) ?? []
+      list.push(Math.round(slot.transform.rotationY))
+      anglesByHeight.set(y, list)
+    }
+    expect(anglesByHeight.size).toBe(rows)
+    const rowAngleSets = [...anglesByHeight.values()].map((list) => [...list].sort((a, b) => a - b))
+    for (let i = 1; i < rowAngleSets.length; i++) {
+      expect(rowAngleSets[i]).toEqual(rowAngleSets[0])
+    }
+    expect(rowAngleSets[0]!.length).toBe(cols)
+  })
+
+  it("orients every tile's face exactly at normalize(cameraPosition - tilePosition) — a true inward-facing shell", () => {
+    const api = createSceneAPI()
+    const rootId = api.createNode('frame', null, { size: { width: 1920, height: 1080 } })
+    const containerId = insertPerspectiveTemplate(api, rootId, 'sphere-wall', { x: 0, y: 0 })
+    const slots = api.getChildren(containerId)
+
+    for (const slot of slots) {
+      const { x, y, z, rotationX, rotationY } = slot.transform
+      // Camera sits at this local space's origin, so
+      // normalize(cameraPosition - tilePosition) is just normalize(-position).
+      const dist = Math.hypot(x, y, z) || 1
+      const towardCamera = [-x / dist, -y / dist, -z / dist]
+      const forward = localForward(rotationX, rotationY)
+      const dot =
+        forward[0] * towardCamera[0] + forward[1] * towardCamera[1] + forward[2] * towardCamera[2]
+      expect(dot).toBeCloseTo(1, 5)
+    }
+  })
+
+  it('sways the container back and forth instead of fully spinning', () => {
+    const api = createSceneAPI()
+    const rootId = api.createNode('frame', null, { size: { width: 1920, height: 1080 } })
+    const containerId = insertPerspectiveTemplate(api, rootId, 'sphere-wall', { x: 0, y: 0 }, 2)
+
+    const track = api
+      .getTracksForNode(containerId)
+      .find((t) => t.propertyId === 'transform.rotationY')
+    expect(track).toBeDefined()
+    expect(track!.keyframes[0]).toMatchObject({ time: 2, value: 0 })
+    // Every value stays within a small bound — never accumulates toward
+    // 360 like a full spin would.
+    for (const kf of track!.keyframes) {
+      expect(Math.abs(kf.value as number)).toBeLessThanOrEqual(15)
+    }
+    // Covers well past the scene duration so it never visibly stops.
+    const lastKeyframe = track!.keyframes[track!.keyframes.length - 1]!
+    expect(lastKeyframe.time).toBeGreaterThanOrEqual(api.getMeta().duration)
+  })
+
+  it('does not yaw the container at rest — the sway itself supplies the motion', () => {
+    const api = createSceneAPI()
+    const rootId = api.createNode('frame', null, { size: { width: 1920, height: 1080 } })
+    const containerId = insertPerspectiveTemplate(api, rootId, 'sphere-wall', { x: 0, y: 0 })
+    expect(api.getNode(containerId)?.transform.rotationY).toBe(0)
   })
 })
 

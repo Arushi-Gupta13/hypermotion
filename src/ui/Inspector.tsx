@@ -9105,14 +9105,16 @@ function PerspectiveTemplateSection({
 }) {
   const spec = PERSPECTIVE_TEMPLATES[params.kind as keyof typeof PERSPECTIVE_TEMPLATES]
   const arrangement = spec?.arrangement ?? 'ring'
-  const isGrid = arrangement === 'grid'
-  const spins = (spec?.animation ?? 'spin-y') === 'spin-y'
+  const showColumns = arrangement === 'grid' || arrangement === 'sphere-interior'
+  const showGap = showColumns
+  const showRadius = arrangement !== 'grid'
+  const animates = spec ? spec.animation !== 'none' : true
   const patch = (next: Partial<typeof params>) => {
     applyPerspectiveTemplateParams(api, nodeId, { ...params, ...next })
   }
   return (
     <Section title="Perspective template">
-      {!isGrid ? (
+      {showRadius ? (
         <FieldRow label="Radius">
           <NumberField
             value={params.radius}
@@ -9123,7 +9125,7 @@ function PerspectiveTemplateSection({
           />
         </FieldRow>
       ) : null}
-      {isGrid ? (
+      {showColumns ? (
         <FieldRow label="Columns">
           <NumberField
             value={params.gridColumns}
@@ -9135,7 +9137,7 @@ function PerspectiveTemplateSection({
           />
         </FieldRow>
       ) : null}
-      {isGrid ? (
+      {showGap ? (
         <FieldRow label="Card gap">
           <NumberField
             value={params.gridGap}
@@ -9183,14 +9185,14 @@ function PerspectiveTemplateSection({
           onCommit={(slotCount) => patch({ slotCount: Math.round(slotCount) })}
         />
       </FieldRow>
-      {spins ? (
-        <FieldRow label="Spin duration">
+      {animates ? (
+        <FieldRow label={spec?.animation === 'sway-y' ? 'Sway period' : 'Spin duration'}>
           <NumberField
             value={params.spinDuration}
             min={0.5}
             step={0.5}
             suffix="s"
-            ariaLabel="Spin duration"
+            ariaLabel={spec?.animation === 'sway-y' ? 'Sway period' : 'Spin duration'}
             onCommit={(spinDuration) => patch({ spinDuration })}
           />
         </FieldRow>

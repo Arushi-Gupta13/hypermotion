@@ -61,13 +61,20 @@ import type {
 import { displayedText } from '@/scene'
 import {
   DEVICE_MOCKUP_SPECS,
+  mockupHasRealBody,
   type DeviceMockupKind,
   type DeviceMockupSpec,
 } from '@/scene/builtins/deviceMockups'
 import {
   createDeviceMockupBodyMesh,
+  createDeviceMockupBodyMeshFromModel,
   disposeDeviceMockupBodyMesh,
 } from '@/render3d/deviceMockupMesh'
+import {
+  getCachedMockupModel,
+  initMockupModelLoader,
+  MOCKUP_MODEL_LOADED_EVENT,
+} from '@/render3d/deviceMockupGltfCache'
 import {
   buildWorldPlanes,
   cameraSpaceDepth,
@@ -703,9 +710,15 @@ export function ThreeSceneViewport({
     const paperShaderEvent = paperShaderSourceEventName()
     window.addEventListener(IMAGE_TEXTURE_LOADED_EVENT, onImageLoaded)
     window.addEventListener(paperShaderEvent, onImageLoaded)
+    // A device mockup's real GLB model finishing its (async) load is the
+    // same kind of "a placeholder is now stale, repaint" event as an
+    // image finishing decoding — reuse the same revision bump so the
+    // mockup-mesh cache below notices and swaps the placeholder out.
+    window.addEventListener(MOCKUP_MODEL_LOADED_EVENT, onImageLoaded)
     return () => {
       window.removeEventListener(IMAGE_TEXTURE_LOADED_EVENT, onImageLoaded)
       window.removeEventListener(paperShaderEvent, onImageLoaded)
+      window.removeEventListener(MOCKUP_MODEL_LOADED_EVENT, onImageLoaded)
     }
   }, [])
 
@@ -743,6 +756,7 @@ export function ThreeSceneViewport({
     renderer.setSize(width, height, false)
     renderer.localClippingEnabled = true
     renderer.sortObjects = true
+    initMockupModelLoader(renderer)
     renderer.domElement.style.width = '100%'
     renderer.domElement.style.height = '100%'
     renderer.domElement.style.display = 'block'
@@ -1311,15 +1325,41 @@ function syncPlanes(
     active.add(plane.nodeId)
 
     // Stage-one PBR device mockups: an iPhone-family mockup's "Bezel"
-    // vector item renders as a real lit 3D mesh instead of the generic
-    // flat-texture plane path. Every other node (including Samsung/
-    // browser mockups) is untouched.
-    const mockupSpec = iphoneMockupSpecForBezelNode(api, plane.node)
-    if (mockupSpec) {
+    // vector item (or any other kind whose spec carries a real `glbUrl`)
+    // renders as a real lit 3D mesh instead of the generic flat-texture
+    // plane path. Every other node (including Samsung/browser mockups)
+    // is untouched.
+    const mockupMatch = mockupSpecForBezelNode(api, plane.node)
+    if (mockupMatch) {
+      const { spec: mockupSpec, kind: mockupKind } = mockupMatch
       pbrActive.add(plane.nodeId)
       let mesh = pbrMockupMeshes.get(plane.nodeId)
+      // A `glbUrl` spec starts with the procedural body as a placeholder
+      // while its real model loads (async, via deviceMockupGltfCache) —
+      // once the cache has it, swap the placeholder out. `imageRevision`
+      // bumping (MOCKUP_MODEL_LOADED_EVENT) is what gets this loop to run
+      // again and notice the swap is now possible.
+      if (mesh?.userData.isGlbPlaceholder && mockupSpec.glbUrl) {
+        const model = getCachedMockupModel(mockupSpec.glbUrl)
+        if (model) {
+          scene.remove(mesh)
+          disposeDeviceMockupBodyMesh(mesh)
+          pbrMockupMeshes.delete(plane.nodeId)
+          mesh = undefined
+        }
+      }
       if (!mesh) {
-        mesh = createDeviceMockupBodyMesh(mockupSpec)
+        const model = mockupSpec.glbUrl ? getCachedMockupModel(mockupSpec.glbUrl) : undefined
+        if (model) {
+          mesh = createDeviceMockupBodyMeshFromModel(model, mockupSpec, mockupKind)
+        } else {
+          mesh = createDeviceMockupBodyMesh(mockupSpec)
+          // Only meaningful when `glbUrl` is set — marks this as a
+          // stand-in to be swapped for the real model once it loads,
+          // not this kind's permanent look (Samsung/Browser bodies have
+          // no `glbUrl` and stay procedural forever, which is correct).
+          mesh.userData.isGlbPlaceholder = !!mockupSpec.glbUrl
+        }
         scene.add(mesh)
         pbrMockupMeshes.set(plane.nodeId, mesh)
       }
@@ -3780,21 +3820,25 @@ function renderSharpPlaneCanvas(
 }
 
 /**
- * If `node` is the "Bezel" vector item of an iPhone-family device mockup,
- * returns that mockup's spec so the caller can build the PBR body mesh.
- * Returns null for every other node, including Samsung/browser mockup
- * bezels — those keep rendering through the ordinary flat-plane path.
+ * If `node` is the "Bezel" vector item of a device mockup that should get a
+ * real 3D body — every iPhone-family mockup (the original procedural PBR
+ * treatment), plus any mockup whose spec carries a `glbUrl` (the real
+ * scanned CC-BY models — see deviceMockupGltfCache.ts) — returns that
+ * mockup's spec so the caller can build the body mesh. Returns null for
+ * every other node, including Samsung/browser mockup bezels — those keep
+ * rendering through the ordinary flat-plane path, exactly as before.
  */
-function iphoneMockupSpecForBezelNode(
+function mockupSpecForBezelNode(
   api: SceneAPI,
   node: Node,
-): DeviceMockupSpec | null {
+): { spec: DeviceMockupSpec; kind: DeviceMockupKind } | null {
   if (node.name !== 'Bezel' || !node.parent) return null
   const parent = api.getNode(node.parent)
   if (!parent || parent.kind !== 'frame' || !parent.deviceMockupKind) return null
-  const spec = DEVICE_MOCKUP_SPECS[parent.deviceMockupKind as DeviceMockupKind]
-  if (!spec || spec.family !== 'iphone') return null
-  return spec
+  const kind = parent.deviceMockupKind as DeviceMockupKind
+  const spec = DEVICE_MOCKUP_SPECS[kind]
+  if (!spec || !mockupHasRealBody(spec)) return null
+  return { spec, kind }
 }
 
 function applyPlaneTransform(object: THREE.Object3D, plane: Plane3D) {

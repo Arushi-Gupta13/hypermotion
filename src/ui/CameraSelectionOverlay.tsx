@@ -19,6 +19,8 @@ import {
   type ProjectedPoint2D,
 } from '@/render3d/selectionProjection'
 import { ResizeHandles } from '@/ui/ResizeHandles'
+import { TiltHandle } from '@/ui/TiltHandle'
+import { renderModeEligibleNodes } from '@/ui/multiRenderMode'
 import { VectorEditOverlay } from '@/ui/VectorEditOverlay'
 import { isEditableVectorNode } from '@/scene'
 import {
@@ -173,6 +175,10 @@ export function CameraSelectionOverlay({
     !singleNode.locked &&
     'size' in singleNode &&
     !editingVector
+  // Audio chips have a `size` (a fixed timeline footprint) so they pass
+  // `showHandles`, but tilting a non-visual chip in 3D is meaningless.
+  const showTiltHandle =
+    showHandles && !!singleNode && renderModeEligibleNodes([singleNode]).length > 0
   const singleParent = singleNode?.parent
     ? planeBuildContext.nodesById.get(singleNode.parent)
     : null
@@ -467,6 +473,14 @@ export function CameraSelectionOverlay({
                 : null
             },
           }}
+        />
+      ) : null}
+      {showTiltHandle ? (
+        <TiltHandle
+          nodeId={singleSelection!}
+          rectWidth={singlePlane.rect.width}
+          zoom={zoom}
+          quad={singleQuad}
         />
       ) : null}
     </div>
