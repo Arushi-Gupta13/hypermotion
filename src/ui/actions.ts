@@ -18,7 +18,11 @@ import type { SceneAPI } from '@/scene/doc'
 import { UNDOABLE_GESTURE_ORIGIN } from '@/scene/undo'
 import { addKeyframe, findTrack, getAnimEngine } from '@/anim'
 import { isCursorInstance } from '@/scene/builtins/cursorComponent'
+import { writeSpinKeyframes } from '@/scene/builtins/perspectiveTemplates'
+import { applyGridDistribution } from '@/scene/gridDistribution'
+import { uniqueNodeName } from '@/scene/uniqueNodeName'
 import { getLastSolvedLayout } from '@/ui/hooks/lastSolvedLayout'
+import { applyRenderModeToSelection } from '@/ui/multiRenderMode'
 
 const DEFAULT_COMPONENT_STROKE: Stroke = {
   color: 'oklch(0.6 0 0)',
@@ -222,6 +226,52 @@ export function wrapInGroup(api: SceneAPI, ids: NodeId[]): NodeId | null {
   }, UNDOABLE_GESTURE_ORIGIN)
 
   return groupId
+}
+
+export interface CarouselParams {
+  radius: number
+  spinDuration: number
+  faceOutward: boolean
+}
+
+export function defaultCarouselParams(): CarouselParams {
+  return { radius: 260, spinDuration: 10, faceOutward: true }
+}
+
+/**
+ * Wrap the selection into a new group, arrange its children evenly
+ * around a ring, and spin the group continuously — a real 3D orbiting
+ * carousel. Perspective-correct depth scaling comes from the renderer's
+ * own camera once the group is `renderMode: 'group3d'` and its children
+ * are `renderMode: 'plane'` — the same mechanism the "Card Tunnel"
+ * perspective template uses (see writeSpinKeyframes in
+ * perspectiveTemplates.ts), so no manual per-layer depth-scale math is
+ * needed the way an After Effects 2D comp would require.
+ */
+export function createCarouselFromSelection(
+  api: SceneAPI,
+  ids: NodeId[],
+  params: CarouselParams,
+): NodeId | null {
+  let result: NodeId | null = null
+  api.doc.transact(() => {
+    const groupId = wrapInGroup(api, ids)
+    if (!groupId) return
+    const group = api.getNode(groupId)
+    if (!group) return
+    applyRenderModeToSelection(api, [group], 'group3d')
+    const children = api.getChildren(groupId)
+    applyRenderModeToSelection(api, children, 'plane')
+    applyGridDistribution(
+      api,
+      children.map((c) => c.id),
+      { kind: 'ring', radius: params.radius, startAngle: 0, faceOutward: params.faceOutward },
+    )
+    writeSpinKeyframes(api, groupId, 0, params.spinDuration)
+    api.setNodeProperty(groupId, 'name', uniqueNodeName(api, 'Carousel'))
+    result = groupId
+  }, UNDOABLE_GESTURE_ORIGIN)
+  return result
 }
 
 /**

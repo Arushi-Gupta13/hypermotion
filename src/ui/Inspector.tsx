@@ -198,6 +198,9 @@ import {
   updateComponentPropertyDefinition,
   upsertComponentVariant,
   wrapInAutoLayout,
+  createCarouselFromSelection,
+  defaultCarouselParams,
+  type CarouselParams,
 } from '@/ui/actions'
 import {
   analyzeBeatPcm,
@@ -1080,6 +1083,13 @@ function MultiNodeDetails({ nodes, api }: { nodes: Node[]; api: SceneAPI }) {
     applyGridDistribution(api, nodeIds, next)
   }
 
+  // Carousel — one-click preset: wraps the selection into a group, rings
+  // its children, and spins the group continuously. See
+  // createCarouselFromSelection in ui/actions.ts.
+  const [carouselParams, setCarouselParams] = useState<CarouselParams>(
+    defaultCarouselParams(),
+  )
+
   // Per-group patchers. Each writes to every selected node that has
   // that group, preserving the node's other fields in the same group.
   // When `recording` is on, every patched key also stamps a keyframe at
@@ -1474,6 +1484,56 @@ function MultiNodeDetails({ nodes, api }: { nodes: Node[]; api: SceneAPI }) {
             Arranges the {count} selected layers around their shared center.
             Re-run any time — it always recomputes from their current
             center, not the last arrange.
+          </p>
+        </Section>
+      ) : null}
+
+      {count >= 2 ? (
+        <Section title="Carousel">
+          <FieldRow label="Radius">
+            <NumberField
+              value={carouselParams.radius}
+              min={0}
+              step={1}
+              ariaLabel="Carousel radius"
+              onCommit={(radius) => setCarouselParams({ ...carouselParams, radius })}
+            />
+          </FieldRow>
+          <FieldRow label="Spin duration">
+            <NumberField
+              value={carouselParams.spinDuration}
+              min={1}
+              step={1}
+              suffix="s"
+              ariaLabel="Carousel spin duration"
+              onCommit={(spinDuration) =>
+                setCarouselParams({ ...carouselParams, spinDuration })
+              }
+            />
+          </FieldRow>
+          <FieldRow label="Face outward">
+            <CheckboxField
+              value={carouselParams.faceOutward}
+              onCommit={(faceOutward) =>
+                setCarouselParams({ ...carouselParams, faceOutward })
+              }
+            />
+          </FieldRow>
+          <button
+            type="button"
+            onClick={() => {
+              const id = createCarouselFromSelection(api, nodeIds, carouselParams)
+              if (id) setSelection([id])
+            }}
+            className="w-full rounded border border-border bg-panel-raised px-3 py-2 text-left text-[12px] text-text transition-colors hover:border-accent/50 hover:bg-accent-soft/40"
+          >
+            Create carousel
+          </button>
+          <p className="text-[10px] leading-4 text-text-dim">
+            Wraps the {count} selected layers into a group, arranges them on
+            a ring, and spins it continuously. Afterward, edit like any
+            layer — resize the ring via Arrange on its children, or edit the
+            spin's rotationY keyframes directly.
           </p>
         </Section>
       ) : null}
