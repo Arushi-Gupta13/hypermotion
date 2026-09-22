@@ -5,7 +5,7 @@ import * as Y from 'yjs'
 import { createSceneAPI } from '@/scene/doc'
 import { UNDOABLE_GESTURE_ORIGIN } from '@/scene/undo'
 import { setLastSolvedLayout } from '@/ui/hooks/lastSolvedLayout'
-import { ungroupFrame, wrapInGroup } from './actions'
+import { createCarouselFromSelection, defaultCarouselParams, ungroupFrame, wrapInGroup } from './actions'
 
 const transform = (x: number, y: number) => ({
   x,
@@ -182,6 +182,93 @@ describe('wrapInGroup', () => {
       third,
     ])
     undo.destroy()
+    api.doc.destroy()
+  })
+})
+
+describe('createCarouselFromSelection', () => {
+  it('wraps the selection into a spinning 3D ring group, in one undo step', () => {
+    const { api, root, first, second, third } = fixture()
+
+    const undo = new Y.UndoManager(
+      [
+        api.doc.getMap('scene'),
+        api.doc.getMap('scene').get('nodes') as Y.Map<unknown>,
+        api.doc.getMap('scene').get('tracks') as Y.Map<unknown>,
+      ],
+      { trackedOrigins: new Set([null, UNDOABLE_GESTURE_ORIGIN]) },
+    )
+
+    const groupId = createCarouselFromSelection(
+      api,
+      [first, second, third],
+      defaultCarouselParams(),
+    )
+    expect(groupId).not.toBeNull()
+
+    const group = api.getNode(groupId!)
+    expect(group).toMatchObject({
+      kind: 'frame',
+      transform: { renderMode: 'group3d' },
+    })
+
+    const children = api.getChildren(groupId!)
+    expect(children.map((node) => node.id).sort()).toEqual(
+      [first, second, third].sort(),
+    )
+    for (const child of children) {
+      expect(child.transform.renderMode).toBe('plane')
+    }
+    // Ring-arranged: every child sits ~radius away from the group's
+    // local center axis (x/z), not all stacked at the same point.
+    const distances = children.map((child) =>
+      Math.hypot(child.transform.x, child.transform.z),
+    )
+    for (const d of distances) {
+      expect(d).toBeGreaterThan(0)
+    }
+    const distinctPositions = new Set(
+      children.map((child) => `${child.transform.x},${child.transform.z}`),
+    )
+    expect(distinctPositions.size).toBe(children.length)
+
+    const rotationYTrack = api
+      .getTracksForNode(groupId!)
+      .find((track) => track.propertyId === 'transform.rotationY')
+    expect(rotationYTrack).toBeDefined()
+    expect(rotationYTrack!.keyframes.length).toBeGreaterThanOrEqual(2)
+
+    // One undo step reverts the whole thing — group, ring positions,
+    // render modes, and the spin track together.
+    undo.undo()
+    expect(api.getNode(groupId!)).toBeNull()
+    expect(api.getChildren(root).map((node) => node.id)).toEqual([
+      first,
+      second,
+      third,
+    ])
+    expect(api.getNode(second)?.transform).toMatchObject({ x: 20, y: 30 })
+
+    undo.destroy()
+    api.doc.destroy()
+  })
+
+  it('rejects mixed-parent, missing, root, and camera selections without partial edits', () => {
+    const { api, root, first } = fixture()
+    const otherParent = api.createNode('frame', root, { name: 'Other' })
+    const otherChild = api.createNode('rect', otherParent, { name: 'Other child' })
+    const camera = api.createNode('camera', null, { name: 'Camera' })
+    const before = api.getAllNodeIds()
+
+    expect(
+      createCarouselFromSelection(api, [first, otherChild], defaultCarouselParams()),
+    ).toBeNull()
+    expect(
+      createCarouselFromSelection(api, [first, 'missing'], defaultCarouselParams()),
+    ).toBeNull()
+    expect(createCarouselFromSelection(api, [root], defaultCarouselParams())).toBeNull()
+    expect(createCarouselFromSelection(api, [camera], defaultCarouselParams())).toBeNull()
+    expect(api.getAllNodeIds()).toEqual(before)
     api.doc.destroy()
   })
 })

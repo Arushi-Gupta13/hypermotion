@@ -415,7 +415,7 @@ function paramsFromSpec(spec: PerspectiveTemplateSpec): PerspectiveTemplateParam
  * spinDuration edit or scene-duration change to keep the coverage
  * current.
  */
-function writeSpinKeyframes(
+export function writeSpinKeyframes(
   api: SceneAPI,
   containerId: NodeId,
   startTime: number,
