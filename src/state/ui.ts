@@ -24,7 +24,7 @@ import {
  * playhead and pushes updates here on each tick.
  */
 
-export type Tool = 'select' | 'rect' | 'ellipse' | 'text' | 'frame' | 'hand'
+export type Tool = 'select' | 'rect' | 'ellipse' | 'text' | 'frame' | 'hand' | 'pen'
 export type PanelKey = 'scenes' | 'layers' | 'inspector' | 'timeline'
 export type InspectorMode = 'properties' | 'animate' | 'perspective'
 export type TimelineScope = 'scene' | 'sequence'
