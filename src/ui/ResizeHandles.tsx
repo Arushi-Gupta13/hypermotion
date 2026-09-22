@@ -89,6 +89,7 @@ export function ResizeHandles({
     h0: number
     startLocal: ProjectedPoint2D | null
     latestSize: Partial<Size>
+    latestPosition: { x?: number; y?: number }
     moved: boolean
   } | null>(null)
 
@@ -114,6 +115,7 @@ export function ResizeHandles({
         startLocal:
           projectionRef.current?.clientToLocal(e.clientX, e.clientY) ?? null,
         latestSize: {},
+        latestPosition: {},
         moved: false,
       }
       const el = e.currentTarget as HTMLElement
@@ -157,9 +159,30 @@ export function ResizeHandles({
         if (hSign !== 0) patch.height = nextH
         if (Object.keys(patch).length === 0) return
 
+        // A W/N-side handle (w, nw, sw, n, ne) grows the box from the
+        // OPPOSITE edge, not from (x, y) — the right/bottom edge must
+        // stay put while the dragged edge moves. Only meaningful for an
+        // absolute-positioned node; a flex/grid child's rendered
+        // position is whatever Yoga computes (see the file doc comment),
+        // so writing x/y there wouldn't move anything and would just be
+        // silently discarded on the next layout pass.
+        const positionPatch: { x?: number; y?: number } = {}
+        if (current.position === 'absolute') {
+          if (wSign === -1) positionPatch.x = current.transform.x + (d.w0 - nextW)
+          if (hSign === -1) positionPatch.y = current.transform.y + (d.h0 - nextH)
+        }
+        d.latestPosition = positionPatch
+
         d.latestSize = patch
         d.moved = true
-        nodeGeometryPreviewStore.preview({ [nodeId]: { size: patch } })
+        nodeGeometryPreviewStore.preview({
+          [nodeId]: {
+            size: patch,
+            ...(Object.keys(positionPatch).length > 0
+              ? { transform: positionPatch }
+              : {}),
+          },
+        })
       }
 
       const finishDrag = (ev: PointerEvent, cancelled: boolean) => {
@@ -180,45 +203,66 @@ export function ResizeHandles({
         //                     under REPLACE semantics.
         if (!cancelled && d.moved) {
           const ui = useUI.getState()
-          commitNodeGeometryPreviews(
-            api,
-            { [nodeId]: { size: d.latestSize } },
-            (committedNodeId, preview) => {
-              const patch = preview.size ?? {}
-              if (Object.keys(patch).length === 0) return
-              // A mockup's Bezel/Screen/chrome children are absolute-
-              // positioned fixed geometry — nothing else here makes them
-              // follow this resize. Rescale them by the same ratio so
-              // dragging a corner visibly resizes the whole composite.
-              if (isDeviceMockupRoot(api, committedNodeId)) {
-                rescaleDeviceMockupChildren(
-                  api,
-                  committedNodeId,
-                  d.w0,
-                  d.h0,
-                  typeof patch.width === 'number' ? patch.width : d.w0,
-                  typeof patch.height === 'number' ? patch.height : d.h0,
-                )
+          const positionPatch = d.latestPosition
+          // One transaction for both the position shift and the size
+          // commit below — api.doc.transact is reentrant, so
+          // commitNodeGeometryPreviews' own transact joins this one
+          // instead of opening a second undo step.
+          api.doc.transact(() => {
+            if (Object.keys(positionPatch).length > 0) {
+              const node = api.getNode(nodeId)
+              if (node) {
+                api.setNodeProperty(nodeId, 'transform', {
+                  ...node.transform,
+                  ...positionPatch,
+                })
+                if (ui.recording) {
+                  recordKeyframesForPatch(api, nodeId, ui.playhead, 'transform', positionPatch)
+                } else {
+                  stampToActiveTracksForPatch(api, nodeId, ui.playhead, 'transform', positionPatch)
+                }
               }
-              if (ui.recording) {
-                recordKeyframesForPatch(
-                  api,
-                  committedNodeId,
-                  ui.playhead,
-                  'size',
-                  patch,
-                )
-              } else {
-                stampToActiveTracksForPatch(
-                  api,
-                  committedNodeId,
-                  ui.playhead,
-                  'size',
-                  patch,
-                )
-              }
-            },
-          )
+            }
+            commitNodeGeometryPreviews(
+              api,
+              { [nodeId]: { size: d.latestSize } },
+              (committedNodeId, preview) => {
+                const patch = preview.size ?? {}
+                if (Object.keys(patch).length === 0) return
+                // A mockup's Bezel/Screen/chrome children are absolute-
+                // positioned fixed geometry — nothing else here makes them
+                // follow this resize. Rescale them by the same ratio so
+                // dragging a corner visibly resizes the whole composite.
+                if (isDeviceMockupRoot(api, committedNodeId)) {
+                  rescaleDeviceMockupChildren(
+                    api,
+                    committedNodeId,
+                    d.w0,
+                    d.h0,
+                    typeof patch.width === 'number' ? patch.width : d.w0,
+                    typeof patch.height === 'number' ? patch.height : d.h0,
+                  )
+                }
+                if (ui.recording) {
+                  recordKeyframesForPatch(
+                    api,
+                    committedNodeId,
+                    ui.playhead,
+                    'size',
+                    patch,
+                  )
+                } else {
+                  stampToActiveTracksForPatch(
+                    api,
+                    committedNodeId,
+                    ui.playhead,
+                    'size',
+                    patch,
+                  )
+                }
+              },
+            )
+          })
           nodeGeometryPreviewStore.finish()
         } else {
           nodeGeometryPreviewStore.clear()
