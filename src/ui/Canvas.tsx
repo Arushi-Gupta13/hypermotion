@@ -286,6 +286,40 @@ const AnimatedThreeSceneViewport = memo(function AnimatedThreeSceneViewport({
       ),
     [geometryPreviewNodeIds, props.api],
   )
+  // A resize drag on an absolute-positioned node never reflows anything
+  // else — Yoga excludes it from flow — so its live rect can be patched
+  // straight into the paint layout instead of waiting for the deferred
+  // authoritative solve ResizeHandles commits on release (see
+  // useLayout's "Dirty policy" doc comment). Subscribing to the preview
+  // store HERE — inside this already-`memo()`-isolated leaf, which
+  // already re-renders on every preview frame for the text-hiding logic
+  // above — keeps the high-frequency re-render contained to this one
+  // small component. An earlier attempt subscribed at the top of the
+  // whole Canvas() component instead; that made the entire (enormous)
+  // component re-render on every drag frame, which corrupted the resize
+  // gesture itself (the committed width/height came out wrong once
+  // released, not just a stale live preview).
+  const geometryPreview = useSyncExternalStore(
+    nodeGeometryPreviewStore.subscribe,
+    nodeGeometryPreviewStore.getSnapshot,
+    nodeGeometryPreviewStore.getSnapshot,
+  )
+  const paintLayout = useMemo(() => {
+    if (geometryPreviewNodeIds.length === 0) return props.layout
+    let patched: SolvedLayout | null = null
+    for (const nodeId of geometryPreviewNodeIds) {
+      const preview = geometryPreview[nodeId]
+      const base = props.layout[nodeId]
+      const node = props.api.getNode(nodeId)
+      // Text already gets its own dedicated live proxy
+      // (NodeGeometryPreviewOverlay) — patching its layout rect here
+      // too would double-apply the same width/height preview.
+      if (!preview || !base || !node || node.kind === 'text') continue
+      if (!patched) patched = { ...props.layout }
+      patched[nodeId] = nodeGeometryPreviewRect(node, base, preview)
+    }
+    return patched ?? props.layout
+  }, [props.layout, geometryPreviewNodeIds, geometryPreview, props.api])
   const rootId = props.api.getRoot()
   const liveSceneFill =
     rootId && sceneAnimated[rootId]?.fill !== undefined
@@ -352,6 +386,7 @@ const AnimatedThreeSceneViewport = memo(function AnimatedThreeSceneViewport({
     <>
       <MemoizedThreeSceneViewport
         {...props}
+        layout={paintLayout}
         camera={camera}
         animated={sceneAnimated}
         cameraAnim={cameraAnim}

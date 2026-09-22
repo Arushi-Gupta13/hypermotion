@@ -263,7 +263,20 @@ export function ResizeHandles({
               },
             )
           })
-          nodeGeometryPreviewStore.finish()
+          // `finish()` (used elsewhere for a size-only preview) re-publishes
+          // this same packet for one more paint before clearing, to bridge
+          // the gap until the next authoritative solve — safe when the
+          // preview only carries `size`, since that never depends on
+          // anything the commit above just changed. A position preview
+          // does: it's computed as a delta against this node's OWN
+          // transform.x/y, which `api.setNodeProperty` above just
+          // mutated. Re-publishing the stale packet for one more frame
+          // meant that one frame read the delta against the NEW
+          // transform.x instead of the old one, collapsing it to ~0 and
+          // snapping the live outline to the wrong corner right at
+          // release — the flicker. Clearing immediately avoids ever
+          // reading a preview whose baseline has already moved.
+          nodeGeometryPreviewStore.clear()
         } else {
           nodeGeometryPreviewStore.clear()
         }
