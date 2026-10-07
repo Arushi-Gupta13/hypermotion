@@ -4,6 +4,11 @@ import { ARRANGEMENT_CHOICES, ARRANGEMENT_NUMBERS, interpolateArrangementPath, t
 import { applyNullTransforms, hasNullTransform } from '@/scene/nullObject'
 
 import { integratedFlowDistance } from './flowSpeed'
+import {
+  applyProximityExpressions,
+  compileProximityExpressions,
+  type CompiledProximityExpression,
+} from './proximityExpressions'
 
 import type {
   BlendMode,
@@ -321,6 +326,7 @@ function createAnimEngine(): AnimEngine {
   let compiledLayerMotionPaths: CompiledLayerMotionPath[] = []
   let compiledNullNodes = new Map<NodeId, import('@/scene/types').Node>()
   let compiledCursorVariantBindings: CompiledCursorVariantBinding[] = []
+  let compiledProximityExpressions: CompiledProximityExpression[] = []
   let trackPreview: ReadonlyMap<TrackId, Track> | null = null
 
   const tick = (now: number) => {
@@ -451,6 +457,7 @@ function createAnimEngine(): AnimEngine {
         nextTracks,
         cursorComponentId,
       )
+      compiledProximityExpressions = compileProximityExpressions(api)
     }
     const out: Record<NodeId, AnimatedValue> = {}
     for (const authoredTrack of compiledTracks) {
@@ -478,6 +485,9 @@ function createAnimEngine(): AnimEngine {
     }
     applyCursorVariantBindings(out, compiledCursorVariantBindings)
     applyNullTransforms(api, out, compiledNullNodes)
+    if (compiledProximityExpressions.length > 0) {
+      applyProximityExpressions(compiledProximityExpressions, api, out)
+    }
     snapshot = out
     notify()
   }
@@ -495,6 +505,7 @@ function createAnimEngine(): AnimEngine {
       compiledTextTrackGroups = []
       compiledLayerMotionPaths = []
       compiledCursorVariantBindings = []
+      compiledProximityExpressions = []
       trackPreview = null
       // On any scene mutation (including track edits), refresh the
       // snapshot so the render layer stays coherent with the data.

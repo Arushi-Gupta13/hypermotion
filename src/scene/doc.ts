@@ -21,6 +21,7 @@ import type {
   NodeId,
   NodeKind,
   PropertyId,
+  ProximityExpression,
   Scene,
   Section,
   SceneMeta,
@@ -264,6 +265,7 @@ export interface NodeBaseMutable {
   extrusion: Extrusion | undefined
   motionPath: LayerMotionPath | null
   deformation: LayerDeformation | null
+  proximityExpressions: import('@/scene/types').ProximityExpression[] | null
   layerBend: LayerBend
   text: string
   fontFamily: string
@@ -719,6 +721,7 @@ export function createSceneAPI(doc: Y.Doc = new Y.Doc()): SceneAPI {
       motionPath: normalizeLayerMotionPath(y.get('motionPath')),
       deformation: normalizeLayerDeformation(y.get('deformation')),
       layerBend: normalizeLayerBend(y.get('layerBend')),
+      proximityExpressions: normalizeProximityExpressions(y.get('proximityExpressions')),
     }
     switch (kind) {
       case 'arrangement':
@@ -1292,6 +1295,12 @@ export function createSceneAPI(doc: Y.Doc = new Y.Doc()): SceneAPI {
             (props as { layerBend?: LayerBend })?.layerBend,
           ),
         )
+        y.set(
+          'proximityExpressions',
+          normalizeProximityExpressions(
+            (props as { proximityExpressions?: ProximityExpression[] | null })?.proximityExpressions,
+          ),
+        )
 
         // kind-specific defaults
         if (kind === 'frame' || kind === 'component') {
@@ -1727,6 +1736,10 @@ export function createSceneAPI(doc: Y.Doc = new Y.Doc()): SceneAPI {
           y.set('deformation', normalizeLayerDeformation(value))
           return
         }
+        if (key === 'proximityExpressions') {
+          y.set('proximityExpressions', normalizeProximityExpressions(value))
+          return
+        }
         if (key === 'layerBend') {
           y.set('layerBend', normalizeLayerBend(value))
           return
@@ -2140,6 +2153,45 @@ function clampFiniteNumber(
 
 function clamp01(value: unknown): number {
   return Math.max(0, Math.min(1, finiteNumber(value, 0)))
+}
+
+const PROXIMITY_FALLOFFS = new Set(['linear', 'ease-in', 'ease-out', 'ease-in-out', 'step'])
+const PROXIMITY_PROPERTY_IDS = new Set([
+  'transform.x', 'transform.y', 'transform.z', 'transform.rotation',
+  'transform.scaleX', 'transform.scaleY', 'appearance.opacity', 'appearance.cornerRadius',
+])
+
+function normalizeProximityExpressions(
+  value: unknown,
+): ProximityExpression[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null
+  const result: ProximityExpression[] = []
+  for (const raw of value) {
+    if (!isPlainRecord(raw)) continue
+    const id = typeof raw.id === 'string' ? raw.id : ''
+    const triggerNodeId = typeof raw.triggerNodeId === 'string' ? raw.triggerNodeId : ''
+    if (!id || !triggerNodeId) continue
+    const radius = finiteNumber(raw.radius, 200)
+    const falloff = typeof raw.falloff === 'string' && PROXIMITY_FALLOFFS.has(raw.falloff)
+      ? raw.falloff as ProximityExpression['falloff']
+      : 'linear'
+    const enabled = raw.enabled !== false
+    const effects: ProximityExpression['effects'] = []
+    if (Array.isArray(raw.effects)) {
+      for (const e of raw.effects) {
+        if (!isPlainRecord(e)) continue
+        if (typeof e.propertyId !== 'string' || !PROXIMITY_PROPERTY_IDS.has(e.propertyId)) continue
+        effects.push({
+          propertyId: e.propertyId as ProximityExpression['effects'][number]['propertyId'],
+          from: finiteNumber(e.from, 0),
+          to: finiteNumber(e.to, 0),
+        })
+      }
+    }
+    if (effects.length === 0) continue
+    result.push({ id, triggerNodeId, radius: Math.max(0, radius), falloff, effects, enabled })
+  }
+  return result.length > 0 ? result : null
 }
 
 function defaultName(kind: NodeKind): string {

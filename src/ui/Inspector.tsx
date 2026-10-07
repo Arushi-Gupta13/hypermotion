@@ -204,6 +204,7 @@ import {
 } from '@/audio/beatSync'
 import { loadAudioBuffer } from '@/audio/audioBuffer'
 import { TextMotionPathEditor } from '@/ui/TextMotionPathEditor'
+import { ProximityExpressionSection } from '@/ui/ProximityExpressionEditor'
 import { isCursorInstance } from '@/scene/builtins/cursorComponent'
 import {
   addKeyframe,
@@ -4290,6 +4291,14 @@ function NodeDetails({ node, api }: { node: Node; api: SceneAPI }) {
           onAdd={addMotionPath}
           onRemove={removeMotionPath}
           onPatch={patchMotionPath}
+        />
+      )}
+
+      {node.kind !== 'camera' && node.kind !== 'audio' && (
+        <ProximityExpressionSection
+          api={api}
+          nodeId={node.id}
+          expressions={node.proximityExpressions}
         />
       )}
 

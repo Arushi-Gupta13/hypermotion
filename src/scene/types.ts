@@ -603,6 +603,8 @@ interface NodeBase {
   motionPath?: LayerMotionPath | null
   /** Optional non-destructive layer deformation evaluated by the GPU renderer. */
   deformation?: LayerDeformation | null
+  /** Distance-based reactive effects driven by a trigger node's proximity. */
+  proximityExpressions?: ProximityExpression[] | null
   /**
    * Simple parent-space layer bend. Corner and edge values are Z offsets in
    * composition pixels. Children sample the same field so they follow the
@@ -1350,6 +1352,37 @@ export interface Interaction {
   sourceNodeId?: NodeId
   event: InteractionEventKind
   actions: InteractionAction[]
+}
+
+// ---------------------------------------------------------------------------
+// Proximity expressions
+// ---------------------------------------------------------------------------
+
+export type ProximityFalloff = 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out' | 'step'
+
+export interface ProximityEffect {
+  propertyId: ProximityTargetPropertyId
+  from: number
+  to: number
+}
+
+export type ProximityTargetPropertyId =
+  | 'transform.x'
+  | 'transform.y'
+  | 'transform.z'
+  | 'transform.rotation'
+  | 'transform.scaleX'
+  | 'transform.scaleY'
+  | 'appearance.opacity'
+  | 'appearance.cornerRadius'
+
+export interface ProximityExpression {
+  id: string
+  triggerNodeId: NodeId
+  radius: number
+  falloff: ProximityFalloff
+  effects: ProximityEffect[]
+  enabled: boolean
 }
 
 // ---------------------------------------------------------------------------
