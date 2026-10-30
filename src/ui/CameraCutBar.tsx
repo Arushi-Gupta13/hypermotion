@@ -198,7 +198,7 @@ export function SceneCameraControls() {
           <Camera
             size={14}
             aria-hidden
-            className="shrink-0 text-accent"
+            className="shrink-0 text-text-muted"
           />
           <h3
             id="camera-switching-heading"
@@ -237,7 +237,7 @@ export function SceneCameraControls() {
             <EyeOff
               size={12}
               aria-hidden
-              className="shrink-0 text-accent"
+              className="shrink-0 text-text-muted"
             />
             <div className="min-w-0 flex-1 leading-tight">
               <div className="truncate text-[10px] font-medium text-text">
@@ -330,7 +330,7 @@ export function CameraCutTimelineLeftRow() {
       data-camera-cut-lane-label="1"
       className="flex h-7 items-center gap-2 border-b border-border bg-panel-raised/45 px-3"
     >
-      <Camera size={12} className="shrink-0 text-accent" />
+      <Camera size={12} className="shrink-0 text-text-muted" />
       <span className="truncate text-[9px] font-semibold tracking-[0.07em] text-text-muted uppercase">
         Camera cuts
       </span>

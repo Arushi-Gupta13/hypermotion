@@ -1,5 +1,7 @@
 @import "@fontsource-variable/bricolage-grotesque/standard.css";
+@import "@fontsource-variable/inter/index.css";
 @import "tailwindcss";
+@import "./styles/affect-tokens.css";
 
 /*
  * Typography — app chrome.
@@ -339,6 +341,47 @@ select {
   font-family: var(--font-sans);
 }
 
+/*
+ * affect-design (Clean style) mapped onto the app's token names. Components
+ * keep consuming `bg-app-bg`, `text-text-muted`, `border-border`, etc.; the
+ * values now come from the --af-* tokens, which switch with data-theme and
+ * the system color scheme. Timeline, keyframe and stagger hues are functional
+ * and stay as defined above. Placed after every theme block so it wins.
+ */
+:root[data-style='clean'] {
+  --color-app-bg: var(--af-bg);
+  --color-panel: var(--af-surface);
+  /* Opaque on purpose: popovers, docks and dialogs float over the canvas. */
+  --color-panel-raised: var(--af-surface);
+  --color-control: var(--af-surface-raised);
+  --color-control-hover: var(--af-fill);
+  --color-border: var(--af-line);
+  --color-border-strong: var(--af-line-strong);
+  --color-text: var(--af-ink);
+  --color-text-muted: var(--af-text);
+  --color-text-dim: var(--af-muted);
+  --color-accent: var(--af-accent);
+  --color-accent-soft: var(--af-accent-tint);
+
+  /* Inter ships as the bundled variable font ("Inter Variable"); the rest of
+     the stack is the design system's fallback list. */
+  --font-sans: "Inter Variable", var(--af-font-sans);
+  --font-display: "Inter Variable", var(--af-font-sans);
+  --font-mono: var(--af-font-mono);
+
+  --height-control: var(--af-control-h);
+  --height-sidebar-header: var(--af-header-h);
+  --radius-control: var(--af-control-r);
+  --radius-compact: var(--af-radius-sm);
+  --radius-panel: var(--af-card-r);
+  --radius-sheet: var(--af-radius-ctl);
+
+  --shadow-control: var(--af-shadow-control);
+  --shadow-control-hover: var(--af-shadow-hover);
+  --shadow-popover: var(--af-shadow-menu);
+  --shadow-dock: var(--af-shadow-menu);
+}
+
 /* Shared inspector control surface. Form controls keep their structural
    boundary and focus ring while elevated buttons/popovers use the stronger
    shadow tokens above. Only the properties that change are transitioned. */
@@ -578,14 +621,18 @@ select {
   color: var(--color-text);
 }
 
+/* Primary: the flat solid chip from the Clean style (inverts in dark).
+   Blue stays reserved for selection, focus and progress. */
 .hm-primary-action {
-  border: 1px solid color-mix(in srgb, var(--color-accent) 72%, transparent);
-  background: var(--color-accent);
-  color: white;
+  border: 0;
+  background: var(--af-solid);
+  color: var(--af-on-solid);
+  box-shadow: var(--af-shadow-primary);
+  font-weight: 500;
 }
 
 .hm-primary-action:hover {
-  filter: brightness(1.08);
+  background: var(--af-solid-hover);
 }
 
 .hm-secondary-action:active,

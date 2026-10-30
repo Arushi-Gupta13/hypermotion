@@ -1,0 +1,539 @@
+/*
+ * affect-design tokens, vendored from the skill's tokens/tokens.css.
+ * Every custom property is prefixed `--af-` so it cannot collide with
+ * Tailwind's theme (--radius-*, --text-*, --shadow-*) or the app's own
+ * tokens. Do not edit by hand: re-run the prefixing from the source file.
+ * The app uses the Clean style (<html data-style="clean">) for dense UI.
+ */
+/* ==========================================================================
+   affect-design · design tokens
+   Distilled from affectUI: 40 free MIT source files read line-by-line + 76 Pro items
+   measured as rendered on affectui.com. Two visual styles share one scale:
+
+     DEFAULT ("tray")  – white card sitting in a gray tray, 1px hex borders,
+                          dark-gradient primary, roomy (rows 34–40, radius 10–22)
+     CLEAN             – single white card, 0.5px shadow hairlines, alpha-black inks,
+                          flat dark chip primary, dense (rows 28–32, radius 6/10)
+
+   Switch style:  <html data-style="clean">   (default style needs nothing)
+   Switch theme:  <html class="dark">  or  <html data-theme="dark">
+   Motion tokens live in /affect-motion → tokens/motion.css
+   ========================================================================== */
+
+:root {
+  /* ------------------------------------------------------------------ */
+  /* 1. PRIMITIVE PALETTE                                                */
+  /* ------------------------------------------------------------------ */
+  /* Neutrals – light */
+  --af-gray-0: #ffffff;
+  --af-gray-25: #fcfcfc;
+  --af-gray-50: #fafafa;
+  --af-gray-75: #f7f7f7;
+  --af-gray-100: #f5f5f5;
+  --af-gray-150: #f0f0f0;   /* tray, inner lines, fills */
+  --af-gray-200: #ececec;   /* hairline (tiles, testimonial ring) */
+  --af-gray-250: #e5e5e5;   /* card border */
+  --af-gray-300: #e4e7ec;   /* illustration stroke (cool) */
+  --af-gray-350: #d4d4d4;
+  --af-gray-400: #c4c4c4;
+  --af-gray-450: #b5b5b5;
+  --af-gray-500: #a3a3a3;
+  --af-gray-550: #8f8f8f;   /* muted */
+  --af-gray-600: #737373;   /* soft / icon */
+  --af-gray-700: #404040;   /* body text */
+  --af-gray-900: #171717;   /* ink */
+  --af-gray-950: #0d0d0d;   /* primary ring */
+
+  /* Neutrals – dark */
+  --af-night-0: #111113;    /* app bg / tray deep */
+  --af-night-50: #161618;   /* tray */
+  --af-night-100: #19191b;  /* card (blocks) */
+  --af-night-150: #1c1c1e;  /* card (clean) */
+  --af-night-200: #1d1d20;  /* well / code */
+  --af-night-250: #232326;  /* card (default) */
+  --af-night-300: #26262a;  /* pill */
+  --af-night-350: #2a2a2d;  /* raised / hover */
+  --af-night-400: #313135;
+  --af-night-500: #6b6b70;  /* faint */
+  --af-night-600: #8b8b92;
+  --af-night-650: #8f8f8f;  /* muted */
+  --af-night-700: #c4c4c4;  /* text */
+  --af-night-900: #ededed;  /* ink */
+
+  /* Accent – blue */
+  --af-blue-500: #2f6bff;            /* default accent */
+  --af-blue-600: #2557d9;
+  --af-blue-50: #eef3ff;
+  --af-blue-25: #f5f8ff;
+  --af-blue-clean: rgba(0, 96, 226, 0.765);  /* clean accent */
+  --af-blue-dark: #6b95ff;           /* default dark accent */
+  --af-blue-dark-clean: #4d8dff;     /* clean dark accent */
+
+  /* Status hues */
+  --af-green-500: #1a9a52;  --af-green-600: #1f8a4c;  --af-green-dark: #3ec27a;
+  --af-red-500: #e5484d;    --af-red-600: #d93a2b;    --af-red-dark: #ff6369;
+  --af-amber-500: #e8a20c;  --af-amber-text: #b47a06; --af-amber-dark: #f0b232;
+  --af-orange-500: #e8590c; --af-orange-dark: #fb8a3c;
+  --af-rose-500: #e11d48;   --af-rose-dark: #fb7185;
+  --af-violet-500: #7c4dff; --af-indigo-500: #5b5bd6; --af-indigo-dark: #9d9dff;
+  --af-pink-500: #ec4899;   --af-purple-500: #8b5cf6;
+
+  /* Signature pastel "aurora" (illustrations, glows, shines) */
+  --af-aurora-pink: #ffa0ab;
+  --af-aurora-peach: #ffb89e;
+  --af-aurora-lilac: #c8a8e5;
+  --af-aurora-periwinkle: #a8b5ff;
+  --af-aurora-coral: #ff6b5c;
+  --af-aurora: linear-gradient(90deg, #ffa0ab, #ffb89e, #c8a8e5, #a8b5ff);
+  --af-aurora-edge: linear-gradient(90deg, #e4e7ec 0%, #ffb5bc 18%, #ffc5ab 40%, #d5bbef 60%, #b5c0ff 82%, #e4e7ec 100%);
+  --af-brand-gradient: linear-gradient(135deg, #5b9dff, #2f6bff 50%, #8b5cf6); /* assistant mark */
+  --af-pro-gradient: linear-gradient(90deg, #dd0674, #5e3ee0);                 /* "Pro"/premium halo */
+
+  /* ------------------------------------------------------------------ */
+  /* 2. TYPOGRAPHY                                                       */
+  /* ------------------------------------------------------------------ */
+  --af-font-sans: "Inter", "InterVariable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --af-font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* size / line-height pairs (most used first: 13/20, 12/16, 14/20) */
+  --af-text-2xs: 10px;   --af-lh-2xs: 16px;   /* uppercase labels, badges (clean) */
+  --af-text-xs: 11px;    --af-lh-xs: 16px;    /* tags, kbd, tooltips */
+  --af-text-sm: 12px;    --af-lh-sm: 16px;    /* meta, timestamps, counts */
+  --af-text-sm-plus: 12.5px; --af-lh-sm-plus: 18px; /* default-style meta */
+  --af-text-base: 13px;  --af-lh-base: 20px;  /* clean body, list rows */
+  --af-text-md: 13.5px;  --af-lh-md: 20px;    /* nav items, default-style rows */
+  --af-text-lg: 14px;    --af-lh-lg: 20px;    /* default body, buttons */
+  --af-text-xl: 15px;    --af-lh-xl: 24px;    /* card titles */
+  --af-text-2xl: 16px;   --af-lh-2xl: 22px;   /* default titles */
+  --af-text-3xl: 20px;   --af-lh-3xl: 28px;   /* section titles */
+  --af-text-4xl: 22px;   --af-lh-4xl: 28px;   /* page title (app shell) */
+  --af-text-5xl: 28px;   --af-lh-5xl: 34px;   /* greeting / hero in-app */
+  --af-text-input: 16px;                   /* real inputs on touch (no iOS zoom) */
+
+  --af-weight-regular: 400;
+  --af-weight-book: 450;    /* loader text, illustration labels */
+  --af-weight-medium: 500;  /* THE default weight – 75% of all text */
+  --af-weight-semibold: 600;/* default-style titles, badges only */
+
+  --af-tracking-tight: -0.01em;    /* titles & buttons (default style) */
+  --af-tracking-snug: -0.006em;
+  --af-tracking-none: 0;
+  --af-tracking-caps: 0.06em;      /* uppercase pills (default) */
+  --af-tracking-caps-clean: 0.5px; /* uppercase labels (clean) */
+
+  /* ------------------------------------------------------------------ */
+  /* 3. SPACING (4-pt base with 2/6/10/14 half-steps)                    */
+  /* ------------------------------------------------------------------ */
+  --af-space-0: 0;
+  --af-space-px: 1px;
+  --af-space-0-5: 2px;   /* icon-text nudge, tight gaps */
+  --af-space-1: 4px;     /* popover padding, chip gap */
+  --af-space-1-5: 6px;   /* tray padding, chip gap, small gaps */
+  --af-space-2: 8px;     /* THE default gap */
+  --af-space-2-5: 10px;  /* control padding-x (clean md) */
+  --af-space-3: 12px;    /* card padding (clean), grid gap */
+  --af-space-3-5: 14px;  /* compact card padding */
+  --af-space-4: 16px;    /* card padding (clean), row padding-x */
+  --af-space-5: 20px;    /* card padding (default) */
+  --af-space-6: 24px;
+  --af-space-7: 28px;    /* indent under avatar/icon (20 + 8) */
+  --af-space-8: 32px;    /* page padding-x */
+  --af-space-12: 48px;   /* empty-state padding-y, page top */
+  --af-space-14: 56px;   /* page bottom, marquee gap */
+
+  /* ------------------------------------------------------------------ */
+  /* 4. RADIUS                                                           */
+  /* ------------------------------------------------------------------ */
+  --af-radius-xs: 4px;    /* checkbox (clean), tiny bars */
+  --af-radius-tag: 5px;   /* tags / badges (clean) */
+  --af-radius-sm: 6px;    /* clean controls, rows, chips, icon buttons, kbd */
+  --af-radius-md: 8px;    /* nav items, menu items, code blocks, popover rows */
+  --af-radius-ctl: 10px;  /* clean card / popover; default sm button, chip */
+  --af-radius-btn: 12px;  /* default md button, rows */
+  --af-radius-lg: 14px;   /* default lg button, tips, empty state, KPI cards */
+  --af-radius-card: 16px; /* default card inside tray */
+  --af-radius-panel: 18px;/* app-shell inset main panel */
+  --af-radius-xl: 20px;   /* floating default card */
+  --af-radius-tray: 22px; /* default tray (= card 16 + pad 6) */
+  --af-radius-full: 999px;
+  /* Rule: nested radius = outer radius − padding  (tray 22 − 6 = card 16) */
+
+  /* ------------------------------------------------------------------ */
+  /* 5. STROKE / BORDER WIDTHS                                           */
+  /* ------------------------------------------------------------------ */
+  --af-stroke-hairline: 0.5px;   /* clean edges, separators, SVG tile outline */
+  --af-stroke-1: 1px;            /* default borders, rings */
+  --af-stroke-focus: 2px;        /* focus outline */
+  /* Icon strokes on a 24 grid */
+  --af-icon-stroke-thin: 1.1;    /* clean icons */
+  --af-icon-stroke: 1.5;         /* default icons, nav */
+  --af-icon-stroke-bold: 1.6;    /* default action icons, spinners */
+  --af-icon-stroke-heavy: 1.8;   /* chevrons, checks */
+  --af-icon-stroke-check: 2.2;   /* small ticks inside filled boxes */
+  /* Illustration strokes */
+  --af-line-connector: 1.5;      /* beams, connector lines */
+  --af-line-dashed: 2.4;         /* dashed links, dasharray 6 7.23 */
+  --af-line-ring: 1.2;           /* orbit rings */
+
+  /* ------------------------------------------------------------------ */
+  /* 6. SIZES                                                            */
+  /* ------------------------------------------------------------------ */
+  --af-icon-xs: 12px; --af-icon-sm: 14px; --af-icon-md: 16px; --af-icon-lg: 18px; --af-icon-xl: 20px;
+  --af-avatar-xs: 20px; --af-avatar-sm: 24px; --af-avatar-md: 32px; --af-avatar-lg: 42px;
+  --af-tile-sm: 24px; --af-tile-md: 26px;  /* icon tiles in rows */
+  --af-dot: 6px; --af-dot-status: 8px;
+  --af-touch-min: 40px;  /* coarse pointer minimum (44 for primary rows) */
+
+  /* ------------------------------------------------------------------ */
+  /* 7. LAYOUT                                                           */
+  /* ------------------------------------------------------------------ */
+  --af-w-menu: 260px;  --af-w-popover: 320px;  --af-w-card-sm: 360px;  --af-w-card: 420px;
+  --af-w-card-md: 460px; --af-w-card-lg: 520px; --af-w-dialog: 600px;  --af-w-composer: 680px;
+  --af-w-sidebar: 248px;   /* app shell sidebar (collapsible) */
+  --af-page-pad: 46px 32px 56px; /* app-shell page padding (top x bottom) */
+  --af-bp-drawer: 900px;   /* sidebar → drawer */
+  --af-bp-panel: 1000px;   /* side panel → slide-in layer */
+  /* component container-query breakpoints: 300 340 360 380 400 440 520 560 600 640 760 */
+
+  /* ------------------------------------------------------------------ */
+  /* 8. ELEVATION (z)                                                    */
+  /* ------------------------------------------------------------------ */
+  --af-z-base: 0; --af-z-raised: 1; --af-z-pill: 2; --af-z-sticky: 5; --af-z-popover: 50; --af-z-toast: 100;
+
+  /* ------------------------------------------------------------------ */
+  /* 9. SEMANTIC – DEFAULT STYLE (light)                                 */
+  /* ------------------------------------------------------------------ */
+  --af-bg: #ffffff;
+  --af-tray: var(--af-gray-150);
+  --af-surface: #ffffff;
+  --af-surface-hover: var(--af-gray-50);
+  --af-surface-raised: var(--af-gray-75);
+  --af-fill: var(--af-gray-100);              /* chip, ghost hover */
+  --af-fill-strong: var(--af-gray-150);
+  --af-wash: rgba(0, 0, 0, 0.03);
+  --af-line: var(--af-gray-250);              /* card border */
+  --af-line-soft: var(--af-gray-150);         /* separators inside cards */
+  --af-line-strong: #d4d4d8;
+
+  --af-ink: var(--af-gray-900);               /* headings, primary text */
+  --af-text: var(--af-gray-700);              /* body */
+  --af-muted: var(--af-gray-550);             /* secondary */
+  --af-soft: var(--af-gray-600);              /* icons */
+  --af-faint: var(--af-gray-450);             /* placeholder, disabled */
+  --af-on-solid: #fafafa;
+
+  --af-solid: linear-gradient(#323137, #201e25);          /* primary fill */
+  --af-solid-hover: linear-gradient(#3c3b42, #29272f);
+  --af-solid-edge: linear-gradient(#4b4951, #31303a, #18171b);
+  --af-solid-ring: var(--af-gray-950);
+
+  --af-accent: var(--af-blue-500);
+  --af-accent-ink: var(--af-blue-600);
+  --af-accent-tint: rgba(47, 107, 255, 0.1);
+  --af-accent-wash: var(--af-blue-50);
+  --af-success: var(--af-green-600);   --af-success-tint: rgba(31, 138, 76, 0.1);
+  --af-danger: var(--af-red-500);      --af-danger-tint: #ffe6e9;
+  --af-warning: var(--af-orange-500);  --af-warning-tint: #fdeedd;
+  --af-attention: var(--af-amber-500);
+  --af-new: var(--af-rose-500);        --af-new-tint: #fff0f3;
+
+  --af-focus-ring: rgba(23, 23, 23, 0.22);
+  --af-focus-offset: 2px;
+  --af-shine: rgba(255, 255, 255, 0.82);   /* shimmer band */
+
+  /* Shadows – default */
+  --af-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.06);                                       /* card in tray */
+  --af-shadow-control: 0 0 0 1px var(--af-gray-250), 0 1px 2px rgba(0, 0, 0, 0.04);       /* secondary button */
+  --af-shadow-primary: 0 0 0 1px var(--af-gray-950), 0 2px 4px rgba(0, 0, 0, 0.1);
+  --af-shadow-primary-sm: 0 0 0 1px var(--af-gray-950), 0 2px 4px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  --af-shadow-card: 0 0 0 1px #ebebeb, 0 2px 6px rgba(0, 0, 0, 0.04);                  /* app-shell cards */
+  --af-shadow-float: 0 1px 2px rgba(0, 0, 0, 0.03), 0 8px 24px rgba(0, 0, 0, 0.035);   /* floating card */
+  --af-shadow-pill: 0 0 0 0.5px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.08), 0 2px 8px -2px rgba(0, 0, 0, 0.06); /* segmented pill */
+  --af-shadow-menu: 0 0 0 1px var(--af-gray-250), 0 12px 30px -8px rgba(0, 0, 0, 0.2);
+  --af-shadow-lift: 0 0 0 1px var(--af-gray-200), 0 2px 4px rgba(0, 0, 0, 0.03), 0 12px 28px -10px rgba(0, 0, 0, 0.14); /* hover lift */
+  --af-shadow-kbd: 0 0 0 1px var(--af-gray-250), 0 1px 0 var(--af-gray-250);
+  --af-shadow-tile: 0 0 0 1px rgba(0, 0, 0, 0.07), 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 18px -10px rgba(0, 0, 0, 0.18); /* logo tile */
+
+  /* Component scale – default */
+  --af-control-h-sm: 32px; --af-control-h: 40px; --af-control-h-lg: 48px;
+  --af-control-px-sm: 12px; --af-control-px: 16px; --af-control-px-lg: 20px;
+  --af-control-r-sm: 10px; --af-control-r: 12px; --af-control-r-lg: 14px;
+  --af-control-fs-sm: 13px; --af-control-fs: 14px; --af-control-fs-lg: 15px;
+  --af-row-h: 36px; --af-row-r: 12px; --af-row-px: 12px;
+  --af-chip-h: 30px; --af-chip-r: 10px;
+  --af-card-r: var(--af-radius-card); --af-card-pad: 20px; --af-tray-pad: 6px; --af-tray-r: var(--af-radius-tray);
+  --af-header-h: 46px;
+  --af-border: 1px solid var(--af-line);
+}
+
+/* --------------------------------------------------------------------
+   CLEAN STYLE – <html data-style="clean"> (or on any container)
+   -------------------------------------------------------------------- */
+[data-style="clean"] {
+  --af-tray: transparent;
+  --af-surface: #ffffff;
+  --af-surface-hover: rgba(0, 0, 0, 0.015);
+  --af-surface-raised: rgba(0, 0, 0, 0.03);
+  --af-fill: rgba(0, 0, 0, 0.06);           /* chip, selected */
+  --af-fill-strong: rgba(0, 0, 0, 0.08);    /* pressed */
+  --af-wash: rgba(0, 0, 0, 0.03);           /* hover */
+  --af-line: rgba(0, 0, 0, 0.06);
+  --af-line-soft: rgba(0, 0, 0, 0.06);
+  --af-line-strong: rgba(0, 0, 0, 0.22);    /* checkbox outline */
+
+  --af-strong: #000000;
+  --af-ink: rgba(0, 0, 0, 0.88);
+  --af-text: rgba(0, 0, 0, 0.61);
+  --af-muted: rgba(0, 0, 0, 0.45);
+  --af-soft: rgba(0, 0, 0, 0.447);
+  --af-faint: rgba(0, 0, 0, 0.27);
+  --af-on-solid: #fcfcfc;
+
+  --af-solid: rgba(0, 0, 0, 0.88);
+  --af-solid-hover: rgba(0, 0, 0, 0.8);
+  --af-solid-edge: none;
+  --af-solid-ring: transparent;
+
+  --af-accent: var(--af-blue-clean);
+  --af-accent-ink: rgb(0, 96, 226);
+  --af-accent-tint: rgba(0, 96, 226, 0.08);
+  --af-accent-wash: rgba(0, 96, 226, 0.05);
+  --af-accent-line: rgba(0, 96, 226, 0.35);
+  --af-success: var(--af-green-500);   --af-success-tint: rgba(26, 154, 82, 0.08);
+  --af-danger: var(--af-red-500);      --af-danger-tint: rgba(229, 72, 77, 0.08);
+  --af-warning: var(--af-amber-text);  --af-warning-tint: rgba(232, 162, 12, 0.12);
+  --af-attention: var(--af-amber-500);
+  --af-new: var(--af-rose-500);        --af-new-tint: rgba(225, 29, 72, 0.08);
+
+  --af-focus-ring: rgba(0, 96, 226, 0.35);
+  --af-focus-offset: 1px;
+
+  /* Clean shadow set (identical in every clean file) */
+  --af-shadow-xs: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 1px 1px -1px rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --af-shadow-control: var(--af-shadow-xs);
+  --af-shadow-hover: 0 0 0 0.5px rgba(0, 0, 0, 0.1), 0 1px 1px -1px rgba(0, 0, 0, 0.12), 0 1px 3px 0 rgba(0, 0, 0, 0.07);
+  --af-shadow-primary: none;
+  --af-shadow-primary-sm: none;
+  --af-shadow-card: var(--af-shadow-xs);
+  --af-shadow-float: var(--af-shadow-xs);
+  --af-shadow-pill: var(--af-shadow-xs);
+  --af-shadow-menu: 0 0 0 0.5px rgba(0, 0, 0, 0.08), 0 12px 28px -10px rgba(0, 0, 0, 0.16), 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --af-shadow-pop: var(--af-shadow-menu);
+  --af-shadow-lift: var(--af-shadow-menu);
+  --af-shadow-kbd: var(--af-shadow-xs);
+
+  --af-control-h-sm: 24px; --af-control-h: 28px; --af-control-h-lg: 32px;
+  --af-control-px-sm: 8px; --af-control-px: 10px; --af-control-px-lg: 12px;
+  --af-control-r-sm: 6px; --af-control-r: 6px; --af-control-r-lg: 6px;
+  --af-control-fs-sm: 12px; --af-control-fs: 13px; --af-control-fs-lg: 13px;
+  --af-row-h: 32px; --af-row-r: 6px; --af-row-px: 8px;
+  --af-chip-h: 24px; --af-chip-r: 6px;
+  --af-card-r: var(--af-radius-ctl); --af-card-pad: 16px; --af-tray-pad: 0; --af-tray-r: var(--af-radius-ctl);
+  --af-header-h: 44px;
+  --af-border: 0.5px solid var(--af-line);
+}
+
+/* --------------------------------------------------------------------
+   DARK – default style
+   -------------------------------------------------------------------- */
+/* specificity (0,1,0) + later in source → beats :root */
+.dark, [data-theme="dark"] {
+  --af-bg: var(--af-night-0);
+  --af-tray: var(--af-night-50);
+  --af-surface: var(--af-night-250);
+  --af-surface-hover: var(--af-night-350);
+  --af-surface-raised: var(--af-night-350);
+  --af-fill: var(--af-night-350);
+  --af-fill-strong: var(--af-night-400);
+  --af-wash: rgba(255, 255, 255, 0.04);
+  --af-line: rgba(255, 255, 255, 0.08);
+  --af-line-soft: rgba(255, 255, 255, 0.07);
+  --af-line-strong: rgba(255, 255, 255, 0.14);
+
+  --af-ink: var(--af-night-900);
+  --af-text: var(--af-night-700);
+  --af-muted: var(--af-night-650);
+  --af-soft: var(--af-night-650);
+  --af-faint: var(--af-night-500);
+  --af-on-solid: #121213;
+
+  /* primary inverts to a light chip */
+  --af-solid: linear-gradient(#f4f4f5, #e4e4e7);
+  --af-solid-hover: linear-gradient(#ffffff, #ececef);
+  --af-solid-edge: linear-gradient(#ffffff, #ececef, #d4d4d8);
+  --af-solid-ring: rgba(0, 0, 0, 0.6);
+
+  --af-accent: var(--af-blue-dark);
+  --af-accent-ink: #8fb1ff;
+  --af-accent-tint: rgba(47, 107, 255, 0.16);
+  --af-accent-wash: rgba(79, 130, 255, 0.12);
+  --af-success: var(--af-green-dark);  --af-success-tint: rgba(62, 194, 122, 0.14);
+  --af-danger: #ff6b6b;             --af-danger-tint: rgba(255, 64, 64, 0.16);
+  --af-warning: var(--af-orange-dark); --af-warning-tint: rgba(251, 154, 75, 0.14);
+  --af-attention: var(--af-amber-dark);
+  --af-new: var(--af-rose-dark);       --af-new-tint: rgba(225, 29, 72, 0.16);
+
+  --af-focus-ring: rgba(237, 237, 237, 0.3);
+  --af-shine: rgba(237, 237, 237, 0.95);
+
+  --af-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --af-shadow-control: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --af-shadow-primary: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 0 #ffffff;
+  --af-shadow-primary-sm: var(--af-shadow-primary);
+  --af-shadow-card: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --af-shadow-float: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.35);
+  --af-shadow-pill: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --af-shadow-menu: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 12px 30px -8px rgba(0, 0, 0, 0.5);
+  --af-shadow-lift: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 12px 28px -10px rgba(0, 0, 0, 0.6);
+  --af-shadow-kbd: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 1px 0 rgba(255, 255, 255, 0.1);
+  --af-shadow-tile: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 8px 18px -10px rgba(0, 0, 0, 0.6);
+}
+
+/* DARK – clean style */
+/* specificity (0,2,0): wins over both the clean-light and default-dark blocks,
+   whichever element carries .dark / data-style */
+.dark[data-style="clean"], .dark [data-style="clean"], [data-style="clean"] .dark,
+[data-theme="dark"][data-style="clean"], [data-theme="dark"] [data-style="clean"], [data-style="clean"] [data-theme="dark"] {
+  --af-surface: var(--af-night-150);
+  --af-surface-hover: rgba(255, 255, 255, 0.03);
+  --af-surface-raised: rgba(255, 255, 255, 0.04);
+  --af-fill: rgba(255, 255, 255, 0.08);
+  --af-fill-strong: rgba(255, 255, 255, 0.1);
+  --af-wash: rgba(255, 255, 255, 0.04);
+  --af-line: rgba(255, 255, 255, 0.08);
+  --af-line-soft: rgba(255, 255, 255, 0.08);
+  --af-line-strong: rgba(255, 255, 255, 0.22);
+
+  --af-strong: #ffffff;
+  --af-ink: rgba(255, 255, 255, 0.9);
+  --af-text: rgba(255, 255, 255, 0.62);
+  --af-muted: rgba(255, 255, 255, 0.46);
+  --af-soft: rgba(255, 255, 255, 0.5);
+  --af-faint: rgba(255, 255, 255, 0.3);
+  --af-on-solid: #161618;
+
+  --af-solid: rgba(255, 255, 255, 0.9);
+  --af-solid-hover: rgba(255, 255, 255, 0.82);
+
+  --af-accent: var(--af-blue-dark-clean);
+  --af-accent-ink: #8fb1ff;
+  --af-accent-tint: rgba(77, 141, 255, 0.16);
+  --af-accent-wash: rgba(77, 141, 255, 0.1);
+  --af-accent-line: rgba(77, 141, 255, 0.4);
+  --af-success: var(--af-green-dark);  --af-success-tint: rgba(62, 194, 122, 0.14);
+  --af-danger: var(--af-red-dark);     --af-danger-tint: rgba(229, 72, 77, 0.16);
+  --af-warning: var(--af-amber-dark);  --af-warning-tint: rgba(232, 162, 12, 0.14);
+  --af-focus-ring: rgba(77, 141, 255, 0.5);
+  --af-shine: #ffffff;
+
+  --af-shadow-xs: 0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --af-shadow-control: var(--af-shadow-xs);
+  --af-shadow-hover: 0 0 0 0.5px rgba(255, 255, 255, 0.16), 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --af-shadow-card: var(--af-shadow-xs);
+  --af-shadow-float: var(--af-shadow-xs);
+  --af-shadow-pill: var(--af-shadow-xs);
+  --af-shadow-menu: 0 0 0 0.5px rgba(255, 255, 255, 0.12), 0 12px 28px -10px rgba(0, 0, 0, 0.6);
+  --af-shadow-pop: var(--af-shadow-menu);
+  --af-shadow-lift: var(--af-shadow-menu);
+  --af-shadow-kbd: var(--af-shadow-xs);
+}
+
+
+/* System dark: mirror the dark blocks when the user has not forced a theme. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+--af-bg: var(--af-night-0);
+  --af-tray: var(--af-night-50);
+  --af-surface: var(--af-night-250);
+  --af-surface-hover: var(--af-night-350);
+  --af-surface-raised: var(--af-night-350);
+  --af-fill: var(--af-night-350);
+  --af-fill-strong: var(--af-night-400);
+  --af-wash: rgba(255, 255, 255, 0.04);
+  --af-line: rgba(255, 255, 255, 0.08);
+  --af-line-soft: rgba(255, 255, 255, 0.07);
+  --af-line-strong: rgba(255, 255, 255, 0.14);
+
+  --af-ink: var(--af-night-900);
+  --af-text: var(--af-night-700);
+  --af-muted: var(--af-night-650);
+  --af-soft: var(--af-night-650);
+  --af-faint: var(--af-night-500);
+  --af-on-solid: #121213;
+
+  
+  --af-solid: linear-gradient(#f4f4f5, #e4e4e7);
+  --af-solid-hover: linear-gradient(#ffffff, #ececef);
+  --af-solid-edge: linear-gradient(#ffffff, #ececef, #d4d4d8);
+  --af-solid-ring: rgba(0, 0, 0, 0.6);
+
+  --af-accent: var(--af-blue-dark);
+  --af-accent-ink: #8fb1ff;
+  --af-accent-tint: rgba(47, 107, 255, 0.16);
+  --af-accent-wash: rgba(79, 130, 255, 0.12);
+  --af-success: var(--af-green-dark);  --af-success-tint: rgba(62, 194, 122, 0.14);
+  --af-danger: #ff6b6b;             --af-danger-tint: rgba(255, 64, 64, 0.16);
+  --af-warning: var(--af-orange-dark); --af-warning-tint: rgba(251, 154, 75, 0.14);
+  --af-attention: var(--af-amber-dark);
+  --af-new: var(--af-rose-dark);       --af-new-tint: rgba(225, 29, 72, 0.16);
+
+  --af-focus-ring: rgba(237, 237, 237, 0.3);
+  --af-shine: rgba(237, 237, 237, 0.95);
+
+  --af-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --af-shadow-control: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --af-shadow-primary: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 0 #ffffff;
+  --af-shadow-primary-sm: var(--af-shadow-primary);
+  --af-shadow-card: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --af-shadow-float: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.35);
+  --af-shadow-pill: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --af-shadow-menu: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 12px 30px -8px rgba(0, 0, 0, 0.5);
+  --af-shadow-lift: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 12px 28px -10px rgba(0, 0, 0, 0.6);
+  --af-shadow-kbd: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 1px 0 rgba(255, 255, 255, 0.1);
+  --af-shadow-tile: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 8px 18px -10px rgba(0, 0, 0, 0.6);
+  }
+  :root:not([data-theme="light"])[data-style="clean"] {
+--af-surface: var(--af-night-150);
+  --af-surface-hover: rgba(255, 255, 255, 0.03);
+  --af-surface-raised: rgba(255, 255, 255, 0.04);
+  --af-fill: rgba(255, 255, 255, 0.08);
+  --af-fill-strong: rgba(255, 255, 255, 0.1);
+  --af-wash: rgba(255, 255, 255, 0.04);
+  --af-line: rgba(255, 255, 255, 0.08);
+  --af-line-soft: rgba(255, 255, 255, 0.08);
+  --af-line-strong: rgba(255, 255, 255, 0.22);
+
+  --af-strong: #ffffff;
+  --af-ink: rgba(255, 255, 255, 0.9);
+  --af-text: rgba(255, 255, 255, 0.62);
+  --af-muted: rgba(255, 255, 255, 0.46);
+  --af-soft: rgba(255, 255, 255, 0.5);
+  --af-faint: rgba(255, 255, 255, 0.3);
+  --af-on-solid: #161618;
+
+  --af-solid: rgba(255, 255, 255, 0.9);
+  --af-solid-hover: rgba(255, 255, 255, 0.82);
+
+  --af-accent: var(--af-blue-dark-clean);
+  --af-accent-ink: #8fb1ff;
+  --af-accent-tint: rgba(77, 141, 255, 0.16);
+  --af-accent-wash: rgba(77, 141, 255, 0.1);
+  --af-accent-line: rgba(77, 141, 255, 0.4);
+  --af-success: var(--af-green-dark);  --af-success-tint: rgba(62, 194, 122, 0.14);
+  --af-danger: var(--af-red-dark);     --af-danger-tint: rgba(229, 72, 77, 0.16);
+  --af-warning: var(--af-amber-dark);  --af-warning-tint: rgba(232, 162, 12, 0.14);
+  --af-focus-ring: rgba(77, 141, 255, 0.5);
+  --af-shine: #ffffff;
+
+  --af-shadow-xs: 0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --af-shadow-control: var(--af-shadow-xs);
+  --af-shadow-hover: 0 0 0 0.5px rgba(255, 255, 255, 0.16), 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --af-shadow-card: var(--af-shadow-xs);
+  --af-shadow-float: var(--af-shadow-xs);
+  --af-shadow-pill: var(--af-shadow-xs);
+  --af-shadow-menu: 0 0 0 0.5px rgba(255, 255, 255, 0.12), 0 12px 28px -10px rgba(0, 0, 0, 0.6);
+  --af-shadow-pop: var(--af-shadow-menu);
+  --af-shadow-lift: var(--af-shadow-menu);
+  --af-shadow-kbd: var(--af-shadow-xs);
+  }
+}

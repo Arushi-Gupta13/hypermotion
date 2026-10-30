@@ -218,10 +218,10 @@ export function TopBar() {
           }}
           disabled={exportRunning}
           className={[
-            'flex h-[30px] items-center rounded-md bg-accent px-3 text-[12px] font-medium text-white shadow-sm',
+            'flex h-[var(--af-control-h)] items-center rounded-[var(--radius-control)] bg-[var(--af-solid)] px-3 text-[13px] font-medium text-[var(--af-on-solid)]',
             exportRunning
               ? 'cursor-not-allowed opacity-50'
-              : 'hover:brightness-110',
+              : 'hover:bg-[var(--af-solid-hover)]',
           ].join(' ')}
         >
           Export
