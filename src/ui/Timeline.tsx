@@ -678,6 +678,61 @@ export function Timeline() {
   // the graph editor in that case). Set is kept here for fast hit
   // tests; the store sees a serializable array.
   const [selectedKfs, setSelectedKfs] = useState<Set<string>>(() => new Set())
+
+  // Button zoom. Pinch / Cmd+scroll already zoom around the cursor; these
+  // anchor on the centre of the visible time range so the view stays put.
+  const zoomTimelineTo = (nextPx: number, leftTime?: number) => {
+    const scroller = scrollerRef.current
+    const current = readTimelinePxPerSecond()
+    const next = Math.max(5, Math.min(800, nextPx))
+    if (!scroller) {
+      setTimelinePxPerSecond(next)
+      return
+    }
+    const viewWidth = Math.max(1, scroller.clientWidth - timelineSidebarWidth)
+    const centerTime = (scroller.scrollLeft + viewWidth / 2) / current
+    setTimelinePxPerSecond(next)
+    queueMicrotask(() => {
+      scroller.scrollLeft = Math.max(
+        0,
+        leftTime !== undefined
+          ? leftTime * next
+          : centerTime * next - viewWidth / 2,
+      )
+    })
+  }
+  const zoomTimelineBy = (factor: number) =>
+    zoomTimelineTo(readTimelinePxPerSecond() * factor)
+  const fitTimelineToView = () => {
+    const scroller = scrollerRef.current
+    if (!scroller || duration <= 0) return
+    const viewWidth = scroller.clientWidth - timelineSidebarWidth - 24
+    zoomTimelineTo(viewWidth / duration, 0)
+  }
+  const zoomTimelineToSelection = () => {
+    const scroller = scrollerRef.current
+    if (!scroller) return
+    let min = Infinity
+    let max = -Infinity
+    for (const key of selectedKfs) {
+      const sep = key.indexOf(':')
+      if (sep < 0) continue
+      const keyframe = api
+        .getTrack(key.slice(0, sep))
+        ?.keyframes.find((kf) => kf.id === key.slice(sep + 1))
+      if (!keyframe) continue
+      min = Math.min(min, keyframe.time)
+      max = Math.max(max, keyframe.time)
+    }
+    if (!Number.isFinite(min)) {
+      fitTimelineToView()
+      return
+    }
+    const span = Math.max(max - min, 0.25)
+    const pad = span * 0.1
+    const viewWidth = scroller.clientWidth - timelineSidebarWidth - 24
+    zoomTimelineTo(viewWidth / (span + pad * 2), Math.max(0, min - pad))
+  }
   const [timelineMode, setTimelineMode] = useState<TimelineMode>('animated')
   const [beatSyncMessage, setBeatSyncMessage] = useState('')
   const [pendingBeatRespace, setPendingBeatRespace] =
@@ -3069,6 +3124,54 @@ export function Timeline() {
               {workAreaPlaybackMode}
             </button>
           )}
+        </div>
+
+        {/* Zoom controls. Pinch and Cmd+scroll still work; these make zoom
+            discoverable and give one-click fit / zoom-to-selection. */}
+        <div
+          role="group"
+          aria-label="Timeline zoom"
+          className="flex shrink-0 items-center gap-0.5"
+        >
+          <button
+            type="button"
+            onClick={() => zoomTimelineBy(1 / 1.5)}
+            title="Zoom out (or Cmd+scroll / pinch over the timeline)"
+            aria-label="Zoom timeline out"
+            className="hm-icon-button h-7 w-7"
+          >
+            −
+          </button>
+          <button
+            type="button"
+            onClick={() => zoomTimelineBy(1.5)}
+            title="Zoom in (or Cmd+scroll / pinch over the timeline)"
+            aria-label="Zoom timeline in"
+            className="hm-icon-button h-7 w-7"
+          >
+            +
+          </button>
+          <button
+            type="button"
+            onClick={fitTimelineToView}
+            title="Fit the whole timeline to the view"
+            className="h-7 rounded-[var(--radius-control)] px-2 text-[11px] font-medium text-text-muted hover:bg-control hover:text-text"
+          >
+            Fit
+          </button>
+          <button
+            type="button"
+            onClick={zoomTimelineToSelection}
+            disabled={selectedKfs.size === 0}
+            title={
+              selectedKfs.size === 0
+                ? 'Select keyframes to zoom to them'
+                : 'Zoom to the selected keyframes'
+            }
+            className="h-7 rounded-[var(--radius-control)] px-2 text-[11px] font-medium text-text-muted hover:bg-control hover:text-text disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Selection
+          </button>
         </div>
 
         {/* Duration cluster — far-right, After Effects pattern. The
