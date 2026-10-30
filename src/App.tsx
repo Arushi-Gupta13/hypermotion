@@ -26,6 +26,8 @@ import { useUI } from '@/state/ui'
 import { SceneProvider, useSceneAPI, useSceneVersion } from '@/scene'
 import type { SceneNode } from '@/scene'
 import { useKeyboardShortcuts } from '@/ui/hooks/useKeyboardShortcuts'
+import { useAiBridge } from '@/ai/useAiBridge'
+import { AssistantPanel } from '@/ui/AssistantPanel'
 import { useAnim } from '@/ui/hooks/useAnim'
 import { useFigmaPaste } from '@/ui/hooks/useFigmaPaste'
 import { useFileMenu } from '@/ui/hooks/useFileMenu'
@@ -140,6 +142,7 @@ function Shell() {
 
   // Global wiring — must be mounted once, at the top of the scene tree.
   useKeyboardShortcuts()
+  useAiBridge()
   useFigmaPaste()
   useFileMenu()
 
@@ -274,6 +277,7 @@ function Shell() {
             !componentEditId &&
             (timelineScope === 'sequence' ? <MasterTimeline /> : <Timeline />)}
         </div>
+        <AssistantPanel />
       </div>
       <AudioPlaybackHost />
       <ContextMenu />

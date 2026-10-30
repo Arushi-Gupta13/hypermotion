@@ -2,7 +2,8 @@
 
 import { useEffect, useRef } from 'react'
 import * as Y from 'yjs'
-import { UNDOABLE_GESTURE_ORIGIN } from '@/scene/undo'
+import { AI_EDIT_ORIGIN, UNDOABLE_GESTURE_ORIGIN } from '@/scene/undo'
+import { registerSceneUndoManager } from '@/ai/undoBridge'
 import {
   effectIdFromBlurPropertyId,
   effectStableId,
@@ -122,7 +123,7 @@ export function useKeyboardShortcuts() {
       // Track ordinary null-origin edits plus explicit gesture-boundary edits.
       // Migrations on App.Shell mount use a separate 'migration' origin and
       // therefore cannot pollute the user's undo stack.
-      trackedOrigins: new Set([null, UNDOABLE_GESTURE_ORIGIN]),
+      trackedOrigins: new Set([null, UNDOABLE_GESTURE_ORIGIN, AI_EDIT_ORIGIN]),
     })
     const closeGestureCapture = (transaction: Y.Transaction) => {
       if (transaction.origin === UNDOABLE_GESTURE_ORIGIN) {
@@ -134,7 +135,9 @@ export function useKeyboardShortcuts() {
     }
     api.doc.on('afterTransaction', closeGestureCapture)
     undoManagerRef.current = mgr
+    registerSceneUndoManager(mgr)
     return () => {
+      registerSceneUndoManager(null)
       api.doc.off('afterTransaction', closeGestureCapture)
       mgr.destroy()
       undoManagerRef.current = null

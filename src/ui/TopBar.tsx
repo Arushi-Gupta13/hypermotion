@@ -5,6 +5,8 @@ import { useSceneAPI, useSceneVersion } from '@/scene'
 import { ExportMenu } from '@/ui/ExportMenu'
 import { ExportStatusPill } from '@/ui/ExportStatusPill'
 import { FigmaPluginSetupButton } from '@/ui/FigmaPluginSetup'
+import { AppIcon } from '@/ui/AppIcon'
+import { useAssistant } from '@/ai/store'
 import { useExportProgress } from '@/export'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -187,6 +189,7 @@ export function TopBar() {
 
         <ThemeToggle />
         <PreviewButton />
+        <AssistantButton />
         <FigmaPluginSetupButton />
         <PanelTogglePopover panels={panels} togglePanel={togglePanel} />
 
@@ -457,6 +460,28 @@ function ThemeToggle() {
       ) : (
         <SystemIcon />
       )}
+    </button>
+  )
+}
+
+function AssistantButton() {
+  const open = useAssistant((s) => s.open)
+  const toggle = useAssistant((s) => s.toggle)
+  const running = useAssistant((s) => s.running)
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      aria-pressed={open}
+      title="Describe an animation and have Claude build it on the canvas"
+      className={[
+        'flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[12px] font-medium hover:bg-panel-raised hover:text-text',
+        open ? 'bg-panel-raised text-text' : 'text-text-muted',
+      ].join(' ')}
+    >
+      <AppIcon name="sparkle" size={15} />
+      <span>Assistant</span>
+      {running ? <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" /> : null}
     </button>
   )
 }

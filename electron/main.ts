@@ -38,6 +38,7 @@ import {
   type FigmaPluginStatus,
 } from './figmaPlugin'
 import { isRenderWindowLeaseStale } from './renderWindowLease'
+import { registerAiAssistant } from './aiAssistant'
 import { resolveExportDestinationPath } from './exportDestination'
 import {
   detectNativeBitmapMetadata,
@@ -2160,6 +2161,7 @@ ipcMain.handle('export:headless-error', (_e, message: string) => {
 // reopen. Other platforms quit on last window close, matching native
 // expectations.
 app.whenReady().then(() => {
+  registerAiAssistant()
   // Keep the Figma development plugin at one stable user-owned path. Figma
   // remembers that path after the user's one-time manifest import, while app
   // updates simply refresh the files in place on the next launch.
