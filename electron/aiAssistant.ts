@@ -30,8 +30,18 @@ import {
   type McpToolDefinition,
   type McpToolResult,
 } from './aiMcp'
+import {
+  CLAUDE_MODELS,
+  CODEX_TOKEN_ENV,
+  buildClaudeArgs,
+  buildCodexArgs,
+  createCodexNormalizer,
+  parseCodexDefaultModel,
+  parseCodexModels,
+  type AiModelOption,
+  type AiProvider,
+} from './aiProviders'
 
-const MCP_SERVER_NAME = 'canvas'
 const RPC_TIMEOUT_MS = 60_000
 const STDERR_TAIL_BYTES = 4096
 const MAX_BODY_BYTES = 2 * 1024 * 1024
@@ -67,26 +77,66 @@ let toolTarget: WebContents | null = null
 // Locating Claude Code
 // ---------------------------------------------------------------------------
 
-export function locateClaude(): string | null {
-  const fromEnv = process.env.HYPERMOTION_CLAUDE_PATH?.trim()
+function locateCli(name: string, envVar: string, extra: string[]): string | null {
+  const fromEnv = process.env[envVar]?.trim()
   const candidates = [
     fromEnv,
-    path.join(os.homedir(), '.local', 'bin', 'claude'),
-    '/opt/homebrew/bin/claude',
-    '/usr/local/bin/claude',
-    path.join(os.homedir(), '.claude', 'local', 'claude'),
+    path.join(os.homedir(), '.local', 'bin', name),
+    `/opt/homebrew/bin/${name}`,
+    `/usr/local/bin/${name}`,
+    ...extra,
   ]
   for (const candidate of candidates) {
     if (candidate && isExecutable(candidate)) return candidate
   }
   // A packaged app starts with a minimal PATH; ask the user's login shell.
   const shell = process.env.SHELL || '/bin/zsh'
-  const found = spawnSync(shell, ['-lc', 'command -v claude'], {
+  const found = spawnSync(shell, ['-lc', `command -v ${name}`], {
     encoding: 'utf8',
     timeout: 5000,
   })
   const resolved = found.stdout?.trim().split('\n').pop()?.trim()
   return resolved && isExecutable(resolved) ? resolved : null
+}
+
+export function locateClaude(): string | null {
+  return locateCli('claude', 'HYPERMOTION_CLAUDE_PATH', [
+    path.join(os.homedir(), '.claude', 'local', 'claude'),
+  ])
+}
+
+export function locateCodex(): string | null {
+  return locateCli('codex', 'HYPERMOTION_CODEX_PATH', [])
+}
+
+function codexHome(): string {
+  return process.env.CODEX_HOME?.trim() || path.join(os.homedir(), '.codex')
+}
+
+/** Models Codex offers this account, from Codex's own cache (never auth.json). */
+function readCodexModels(): { models: AiModelOption[]; defaultModel: string | null } {
+  let models: AiModelOption[] = []
+  let defaultModel: string | null = null
+  try {
+    models = parseCodexModels(
+      JSON.parse(fs.readFileSync(path.join(codexHome(), 'models_cache.json'), 'utf8')),
+    )
+  } catch {
+    /* no cache yet: only the default and custom entries are offered */
+  }
+  try {
+    defaultModel = parseCodexDefaultModel(
+      fs.readFileSync(path.join(codexHome(), 'config.toml'), 'utf8'),
+    )
+  } catch {
+    /* no user config */
+  }
+  return { models, defaultModel }
+}
+
+function cliVersion(file: string): string | null {
+  const result = spawnSync(file, ['--version'], { encoding: 'utf8', timeout: 5000 })
+  return result.stdout?.trim() || null
 }
 
 function isExecutable(file: string): boolean {
@@ -206,8 +256,11 @@ function stopBridgeIfIdle(): void {
 
 export interface SendTurnRequest {
   prompt: string
-  /** Claude Code session id from a previous turn; continues the conversation. */
+  /** Which local CLI runs the turn. Defaults to Claude Code. */
+  provider?: AiProvider
+  /** Session (Claude) or thread (Codex) id from a previous turn of this provider. */
   sessionId?: string
+  /** Empty or omitted means the CLI's own default model. */
   model?: string
   systemPrompt?: string
 }
@@ -223,10 +276,13 @@ async function startTurn(
   sender: WebContents,
   request: SendTurnRequest,
 ): Promise<{ turnId: string }> {
-  const claude = locateClaude()
-  if (!claude) {
+  const provider: AiProvider = request.provider === 'codex' ? 'codex' : 'claude'
+  const cli = provider === 'codex' ? locateCodex() : locateClaude()
+  if (!cli) {
     throw new Error(
-      'Claude Code was not found. Install it (https://claude.com/claude-code) and sign in, or set HYPERMOTION_CLAUDE_PATH.',
+      provider === 'codex'
+        ? 'The Codex CLI was not found. Install it (npm i -g @openai/codex), run `codex` once to sign in with ChatGPT, or set HYPERMOTION_CODEX_PATH.'
+        : 'Claude Code was not found. Install it (https://claude.com/claude-code) and sign in, or set HYPERMOTION_CLAUDE_PATH.',
     )
   }
   if (typeof request.prompt !== 'string' || request.prompt.trim() === '') {
@@ -234,48 +290,44 @@ async function startTurn(
   }
   toolTarget = sender
   const { port, token } = await ensureBridge()
-  const mcpConfig = JSON.stringify({
-    mcpServers: {
-      [MCP_SERVER_NAME]: {
-        type: 'http',
-        url: `http://127.0.0.1:${port}/mcp`,
-        headers: { Authorization: `Bearer ${token}` },
-      },
-    },
-  })
-  const args = [
-    '-p',
-    '--output-format',
-    'stream-json',
-    '--verbose',
-    '--include-partial-messages',
-    '--mcp-config',
-    mcpConfig,
-    '--strict-mcp-config',
-    // No shell, file or web tools: the only tools are the live-canvas ones.
-    '--tools',
-    '',
-    '--allowedTools',
-    `mcp__${MCP_SERVER_NAME}`,
-    // Keep the user's personal hooks, plugins and skills out of this session:
-    // faster, cheaper, and nothing unrelated can act on the canvas.
-    '--setting-sources',
-    'project',
-    '--disable-slash-commands',
-    '--max-turns',
-    String(MAX_TURNS),
-  ]
-  if (request.sessionId) args.push('--resume', request.sessionId)
-  if (request.model) args.push('--model', request.model)
-  if (request.systemPrompt) args.push('--append-system-prompt', request.systemPrompt)
+  const mcpUrl = `http://127.0.0.1:${port}/mcp`
+  const model = request.model?.trim() || undefined
+
+  let args: string[]
+  let prompt = request.prompt
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    PATH: `${path.dirname(cli)}${path.delimiter}${process.env.PATH ?? ''}`,
+  }
+  if (provider === 'codex') {
+    args = buildCodexArgs({
+      mcpUrl,
+      sessionId: request.sessionId,
+      // --ignore-user-config drops the user's default model too, so apply it explicitly.
+      model: model ?? readCodexModels().defaultModel ?? undefined,
+    })
+    // The token travels in the environment, never on the command line.
+    env[CODEX_TOKEN_ENV] = token
+    // Codex has no append-system-prompt flag: brief it once, at the start of a thread.
+    if (!request.sessionId && request.systemPrompt) {
+      prompt = `${request.systemPrompt}\n\n---\n\n${request.prompt}`
+    }
+  } else {
+    args = buildClaudeArgs({
+      mcpUrl,
+      token,
+      sessionId: request.sessionId,
+      model,
+      systemPrompt: request.systemPrompt,
+      maxTurns: MAX_TURNS,
+    })
+  }
+  const normalizeCodex = provider === 'codex' ? createCodexNormalizer() : null
 
   const turnId = crypto.randomUUID()
-  const child = spawn(claude, args, {
+  const child = spawn(cli, args, {
     cwd: workingDirectory(),
-    env: {
-      ...process.env,
-      PATH: `${path.dirname(claude)}${path.delimiter}${process.env.PATH ?? ''}`,
-    },
+    env,
     stdio: ['pipe', 'pipe', 'pipe'],
   })
   const turn: ActiveTurn = { child, sender, stopped: false }
@@ -296,7 +348,10 @@ async function startTurn(
       newline = stdoutBuffer.indexOf('\n')
       if (!line) continue
       try {
-        emit('ai:event', { turnId, event: JSON.parse(line) })
+        const parsed: unknown = JSON.parse(line)
+        for (const event of normalizeCodex ? normalizeCodex(parsed) : [parsed]) {
+          emit('ai:event', { turnId, event })
+        }
       } catch {
         // Non-JSON output (warnings) is not part of the transcript.
       }
@@ -326,7 +381,7 @@ async function startTurn(
   child.stdin.on('error', () => {
     /* Claude exited before reading the prompt; `close` reports why. */
   })
-  child.stdin.end(request.prompt)
+  child.stdin.end(prompt)
   return { turnId }
 }
 
@@ -345,12 +400,21 @@ function stopTurn(turnId: string): boolean {
 export function registerAiAssistant(): void {
   ipcMain.handle('ai:status', () => {
     const claude = locateClaude()
-    if (!claude) return { available: false as const }
-    const version = spawnSync(claude, ['--version'], { encoding: 'utf8', timeout: 5000 })
+    const codex = locateCodex()
+    const codexModels = readCodexModels()
     return {
-      available: true as const,
-      path: claude,
-      version: version.stdout?.trim() || null,
+      claude: claude
+        ? { available: true as const, path: claude, version: cliVersion(claude), models: CLAUDE_MODELS }
+        : { available: false as const, models: CLAUDE_MODELS },
+      codex: codex
+        ? {
+            available: true as const,
+            path: codex,
+            version: cliVersion(codex),
+            models: codexModels.models,
+            defaultModel: codexModels.defaultModel,
+          }
+        : { available: false as const, models: [] as AiModelOption[], defaultModel: null },
     }
   })
 

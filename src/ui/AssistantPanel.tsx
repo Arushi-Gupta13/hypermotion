@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useSceneAPI } from '@/scene/hooks'
 import { useUI } from '@/state/ui'
-import { useAssistant } from '@/ai/store'
+import { PROVIDER_LABELS, useAssistant, type AiProvider } from '@/ai/store'
 import { displayToolName, type TranscriptEntry } from '@/ai/transcript'
 import { AppIcon } from '@/ui/AppIcon'
 
@@ -14,21 +14,35 @@ const SUGGESTIONS = [
   'Increase the stagger between these elements.',
 ]
 
-type ClaudeStatus =
-  | { available: true; path: string; version: string | null }
-  | { available: false }
+interface ModelOption {
+  id: string
+  label: string
+}
 
-function useClaudeStatus(): ClaudeStatus | null {
-  const [status, setStatus] = useState<ClaudeStatus | null>(null)
+type ProviderStatus =
+  | { available: true; path: string; version: string | null; models: ModelOption[]; defaultModel?: string | null }
+  | { available: false; models: ModelOption[]; defaultModel?: string | null }
+
+type AssistantStatus = Record<AiProvider, ProviderStatus>
+
+const CUSTOM_MODEL = '__custom__'
+
+function useAssistantStatus(): AssistantStatus | null {
+  const [status, setStatus] = useState<AssistantStatus | null>(null)
   useEffect(() => {
     let cancelled = false
     void window.hypermotion
       ?.invoke('ai:status')
       .then((value) => {
-        if (!cancelled) setStatus(value as ClaudeStatus)
+        if (!cancelled) setStatus(value as AssistantStatus)
       })
       .catch(() => {
-        if (!cancelled) setStatus({ available: false })
+        if (!cancelled) {
+          setStatus({
+            claude: { available: false, models: [] },
+            codex: { available: false, models: [] },
+          })
+        }
       })
     return () => {
       cancelled = true
@@ -53,7 +67,12 @@ export function AssistantPanel() {
   const tryAgain = useAssistant((s) => s.tryAgain)
   const clear = useAssistant((s) => s.clear)
   const selection = useUI((s) => s.selection)
-  const status = useClaudeStatus()
+  const status = useAssistantStatus()
+  const provider = useAssistant((s) => s.provider)
+  const model = useAssistant((s) => s.models[s.provider])
+  const setProvider = useAssistant((s) => s.setProvider)
+  const setModel = useAssistant((s) => s.setModel)
+  const [customOpen, setCustomOpen] = useState(false)
 
   const [draft, setDraft] = useState('')
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -120,7 +139,22 @@ export function AssistantPanel() {
   }
 
   const empty = transcript.entries.length === 0
-  const unavailable = status !== null && !status.available
+  const current = status?.[provider] ?? null
+  const unavailable = current !== null && !current.available
+  const modelOptions: ModelOption[] = current
+    ? [
+        {
+          id: '',
+          label:
+            provider === 'codex' && current.defaultModel
+              ? `Default (${current.defaultModel})`
+              : 'Default',
+        },
+        ...current.models.filter((option) => option.id !== ''),
+      ]
+    : [{ id: '', label: 'Default' }]
+  const knownModel = modelOptions.some((option) => option.id === model)
+  const selectValue = customOpen || !knownModel ? CUSTOM_MODEL : model
 
   return (
     <aside
@@ -160,6 +194,66 @@ export function AssistantPanel() {
         </button>
       </header>
 
+      <div className="shrink-0 border-b border-border px-3 py-2">
+        <div className="flex gap-2">
+          <select
+            value={provider}
+            onChange={(event) => {
+              setCustomOpen(false)
+              setProvider(event.target.value as AiProvider)
+            }}
+            disabled={running}
+            aria-label="AI provider"
+            title="Which signed-in app runs the assistant"
+            className="h-7 min-w-0 flex-1 rounded-[var(--radius-control)] bg-control px-2 text-[12px] text-text shadow-[var(--shadow-control)] outline-none focus-visible:ring-2 focus-visible:ring-accent/45 disabled:opacity-50"
+          >
+            {(Object.keys(PROVIDER_LABELS) as AiProvider[]).map((id) => (
+              <option key={id} value={id}>
+                {PROVIDER_LABELS[id]}
+                {status && !status[id].available ? ' (not installed)' : ''}
+              </option>
+            ))}
+          </select>
+          <select
+            value={selectValue}
+            onChange={(event) => {
+              if (event.target.value === CUSTOM_MODEL) {
+                setCustomOpen(true)
+              } else {
+                setCustomOpen(false)
+                setModel(event.target.value)
+              }
+            }}
+            disabled={running}
+            aria-label="Model"
+            className="h-7 min-w-0 flex-1 rounded-[var(--radius-control)] bg-control px-2 text-[12px] text-text shadow-[var(--shadow-control)] outline-none focus-visible:ring-2 focus-visible:ring-accent/45 disabled:opacity-50"
+          >
+            {modelOptions.map((option) => (
+              <option key={option.id || 'default'} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+            <option value={CUSTOM_MODEL}>Custom…</option>
+          </select>
+        </div>
+        {selectValue === CUSTOM_MODEL ? (
+          <input
+            value={model}
+            onChange={(event) => setModel(event.target.value)}
+            onKeyDown={(event) => event.stopPropagation()}
+            placeholder={provider === 'codex' ? 'Model id, e.g. gpt-5.6-terra' : 'Model id, e.g. claude-opus-5-5'}
+            aria-label="Custom model id"
+            spellCheck={false}
+            className="mt-2 h-7 w-full rounded-[var(--radius-control)] bg-control px-2 font-mono text-[12px] text-text shadow-[var(--shadow-control)] outline-none placeholder:text-text-dim focus-visible:ring-2 focus-visible:ring-accent/45"
+          />
+        ) : null}
+        {provider === 'codex' ? (
+          <p className="mt-1.5 text-[11px] leading-4 text-text-dim">
+            Uses your ChatGPT sign-in through the Codex CLI. Beta: not yet verified with live tool calls.
+          </p>
+        ) : null}
+      </div>
+
       <div
         ref={scrollRef}
         onScroll={(event) => {
@@ -169,7 +263,7 @@ export function AssistantPanel() {
         className="min-h-0 flex-1 overflow-y-auto px-3 py-3"
       >
         {unavailable ? (
-          <ClaudeMissing />
+          <ProviderMissing provider={provider} />
         ) : empty ? (
           <EmptyState onPick={(text) => setDraft(text)} />
         ) : (
@@ -253,7 +347,7 @@ export function AssistantPanel() {
             disabled={unavailable}
             placeholder={
               unavailable
-                ? 'Install Claude Code to use the assistant'
+                ? `Install ${provider === 'codex' ? 'the Codex CLI' : 'Claude Code'} to use the assistant`
                 : 'Describe the animation you want…'
             }
             aria-label="Message the assistant"
@@ -325,8 +419,21 @@ function EmptyState({ onPick }: { onPick: (text: string) => void }) {
   )
 }
 
-function ClaudeMissing() {
-  return (
+function ProviderMissing({ provider }: { provider: AiProvider }) {
+  return provider === 'codex' ? (
+    <div className="space-y-2 pt-2 text-[12px] leading-5 text-text-muted">
+      <div className="text-[13px] font-medium text-text">The Codex CLI was not found</div>
+      <p>
+        ChatGPT runs through OpenAI&apos;s Codex CLI, so there is no API key to manage. Install it
+        (<code>npm i -g @openai/codex</code>), run <code>codex</code> once and choose &quot;Sign in
+        with ChatGPT&quot;, then reopen this panel.
+      </p>
+      <p className="text-text-dim">
+        Installed somewhere unusual? Set <code>HYPERMOTION_CODEX_PATH</code> to its full path and
+        restart the app.
+      </p>
+    </div>
+  ) : (
     <div className="space-y-2 pt-2 text-[12px] leading-5 text-text-muted">
       <div className="text-[13px] font-medium text-text">Claude Code was not found</div>
       <p>

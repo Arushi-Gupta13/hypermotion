@@ -650,10 +650,17 @@ export const AI_TOOLS: AiTool[] = [
 ]
 
 export function listAiToolDefinitions() {
-  return AI_TOOLS.map(({ name, description, inputSchema }) => ({
+  return AI_TOOLS.map(({ name, description, inputSchema, mutates }) => ({
     name,
     description,
     inputSchema,
+    // Everything acts on the open scene only (never the network or disk), and
+    // every edit is undoable.
+    annotations: {
+      readOnlyHint: !mutates,
+      destructiveHint: false,
+      openWorldHint: false,
+    },
   }))
 }
 

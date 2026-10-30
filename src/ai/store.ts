@@ -22,6 +22,38 @@ How to work:
 - When finished, call validate_scene and fix any problems, then call preview with play true so the user sees the result.
 - Keep replies short: say what you changed (layer names, timings), not how the tools work. If a request cannot be done with the available tools, say so plainly and offer the closest alternative.`
 
+export type AiProvider = 'claude' | 'codex'
+
+const PROVIDER_KEY = 'hyper-motion.assistantProvider'
+const MODELS_KEY = 'hyper-motion.assistantModels'
+
+function readProvider(): AiProvider {
+  try {
+    return window.localStorage.getItem(PROVIDER_KEY) === 'codex' ? 'codex' : 'claude'
+  } catch {
+    return 'claude'
+  }
+}
+
+function readModels(): Record<AiProvider, string> {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(MODELS_KEY) ?? '{}') as Partial<
+      Record<AiProvider, unknown>
+    >
+    return {
+      claude: typeof parsed.claude === 'string' ? parsed.claude : '',
+      codex: typeof parsed.codex === 'string' ? parsed.codex : '',
+    }
+  } catch {
+    return { claude: '', codex: '' }
+  }
+}
+
+export const PROVIDER_LABELS: Record<AiProvider, string> = {
+  claude: 'Claude',
+  codex: 'ChatGPT',
+}
+
 interface TurnReview {
   /** Undo-stack depth before the turn started. */
   depthBefore: number
@@ -33,6 +65,14 @@ interface TurnReview {
 interface AssistantState {
   open: boolean
   width: number
+  /** Which local CLI runs the next turn. */
+  provider: AiProvider
+  /** Model per provider; empty string means that CLI's default. */
+  models: Record<AiProvider, string>
+  /** Provider that owns the current transcript's session id. */
+  sessionProvider: AiProvider | null
+  /** Provider of the turn in flight. */
+  turnProvider: AiProvider | null
   transcript: TranscriptState
   running: boolean
   turnId: string | null
@@ -43,6 +83,8 @@ interface AssistantState {
   setOpen: (open: boolean) => void
   toggle: () => void
   setWidth: (width: number) => void
+  setProvider: (provider: AiProvider) => void
+  setModel: (model: string) => void
   send: (text: string, selectionNote?: string) => Promise<void>
   stop: () => Promise<void>
   keep: () => void
@@ -76,6 +118,10 @@ const nextId = (prefix: string) => `${prefix}-${Date.now()}-${entryCounter++}`
 export const useAssistant = create<AssistantState>((set, get) => ({
   open: false,
   width: readWidth(),
+  provider: readProvider(),
+  models: readModels(),
+  sessionProvider: null,
+  turnProvider: null,
   transcript: emptyTranscript,
   running: false,
   turnId: null,
@@ -92,6 +138,26 @@ export const useAssistant = create<AssistantState>((set, get) => ({
       /* storage unavailable */
     }
     set({ width: next })
+  },
+
+  setProvider: (provider) => {
+    try {
+      window.localStorage.setItem(PROVIDER_KEY, provider)
+    } catch {
+      /* storage unavailable */
+    }
+    set({ provider })
+  },
+
+  setModel: (model) => {
+    const { provider, models } = get()
+    const next = { ...models, [provider]: model.trim() }
+    try {
+      window.localStorage.setItem(MODELS_KEY, JSON.stringify(next))
+    } catch {
+      /* storage unavailable */
+    }
+    set({ models: next })
   },
 
   send: async (text, selectionNote) => {
@@ -112,22 +178,42 @@ export const useAssistant = create<AssistantState>((set, get) => ({
     // A new turn ends the previous review: the user chose to keep going.
     closeUndoCapture()
     const depthBefore = undoDepth()
-    set((s) => ({
-      running: true,
-      review: null,
-      turnBaseline: { depthBefore, prompt },
-      transcript: addUserEntry(s.transcript, nextId('user'), prompt),
-    }))
+    const { provider, models, sessionProvider } = get()
+    // A session id only means something to the CLI that created it. After a
+    // provider switch the new one starts fresh: it cannot see the earlier chat,
+    // but it reads the scene itself, so it can still carry on the work.
+    const switched = sessionProvider !== null && sessionProvider !== provider
+    set((s) => {
+      let transcript = s.transcript
+      if (switched) {
+        transcript = addNotice(
+          transcript,
+          nextId('notice'),
+          'info',
+          `Switched to ${PROVIDER_LABELS[provider]}. It starts a fresh conversation and cannot see the chat above, but it reads the scene.`,
+        )
+      }
+      return {
+        running: true,
+        review: null,
+        turnProvider: provider,
+        turnBaseline: { depthBefore, prompt },
+        transcript: addUserEntry(transcript, nextId('user'), prompt),
+      }
+    })
     try {
       const { turnId } = (await bridge.invoke('ai:send', {
         prompt: selectionNote ? `${selectionNote}\n\n${prompt}` : prompt,
-        sessionId: get().transcript.sessionId ?? undefined,
+        provider,
+        model: models[provider] || undefined,
+        sessionId: switched ? undefined : (get().transcript.sessionId ?? undefined),
         systemPrompt: ASSISTANT_SYSTEM_PROMPT,
       })) as { turnId: string }
       set({ turnId })
     } catch (error) {
       set((s) => ({
         running: false,
+        turnProvider: null,
         turnBaseline: null,
         transcript: addNotice(
           s.transcript,
@@ -186,7 +272,7 @@ export const useAssistant = create<AssistantState>((set, get) => ({
 
   clear: () => {
     if (get().running) return
-    set({ transcript: emptyTranscript, review: null, turnBaseline: null })
+    set({ transcript: emptyTranscript, review: null, turnBaseline: null, sessionProvider: null })
   },
 
   onClaudeEvent: (turnId, event) => {
@@ -216,6 +302,8 @@ export const useAssistant = create<AssistantState>((set, get) => ({
         running: false,
         turnId: null,
         turnBaseline: null,
+        turnProvider: null,
+        sessionProvider: s.turnProvider ?? s.sessionProvider,
         transcript,
         review:
           changed && baseline

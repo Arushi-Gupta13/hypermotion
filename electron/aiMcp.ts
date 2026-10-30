@@ -14,6 +14,13 @@ export interface McpToolDefinition {
   name: string
   description: string
   inputSchema: Record<string, unknown>
+  /** MCP tool hints. Clients such as Codex use them to decide on approvals. */
+  annotations?: {
+    readOnlyHint?: boolean
+    destructiveHint?: boolean
+    idempotentHint?: boolean
+    openWorldHint?: boolean
+  }
 }
 
 export interface McpToolResult {
