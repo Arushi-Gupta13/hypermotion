@@ -3457,16 +3457,6 @@ export function Canvas() {
         ) : null}
       </div>
 
-      {/* Zoom indicator. `data-export-hide` removes it from any
-          frame the export pipeline captures — it's editor chrome,
-          not scene content. */}
-      <div
-        className="pointer-events-none absolute bottom-3 right-3 rounded bg-panel/80 px-2 py-1 font-mono text-[10px] text-text-muted backdrop-blur"
-        data-export-hide="1"
-      >
-        {Math.round(view.zoom * 100)}%
-      </div>
-
       {/* Floating tool dock — sits inside the canvas zone, centered
           horizontally, 16px above the bottom edge. Lives here (not
           App.Shell) so it's positioned relative to the canvas

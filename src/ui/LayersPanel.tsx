@@ -216,16 +216,6 @@ export function LayersPanel() {
             </>
           ) : (
             <>
-          {/* Cameras sit above the artboard tree as their own section. They
-              are scene-level nodes (parent: null, not children of root), so
-              the regular tree walk cannot surface them. A row click selects
-              a camera for Inspector; its square authors Program output at the
-              playhead. Advanced editor-only viewing stays in Properties. */}
-          <CamerasSection
-            cameras={cameras}
-            defaultCameraId={defaultCameraId}
-            programCameraId={programCameraId}
-          />
           {root ? (
             <>
               <PanelSectionLabel label="Scene layers" />
@@ -238,6 +228,17 @@ export function LayersPanel() {
               <span className="text-[11px]">Press R to draw a rectangle.</span>
             </p>
           )}
+          {/* Cameras follow the artboard tree: layers are what people edit
+              most. Cameras are scene-level nodes (parent: null, not children
+              of root), so the regular tree walk cannot surface them. A row
+              click selects a camera for Inspector; its check authors Program
+              output at the playhead. Advanced editor-only viewing stays in
+              Properties. */}
+          <CamerasSection
+            cameras={cameras}
+            defaultCameraId={defaultCameraId}
+            programCameraId={programCameraId}
+          />
           {pasteboardNodes.length > 0 ? (
             <div className="mt-3 border-t border-border pt-2">
               <div className="flex items-center justify-between gap-2 px-3 pb-1">
@@ -573,20 +574,57 @@ function CamerasSection({
   defaultCameraId: NodeId | null
   programCameraId: NodeId | null
 }) {
+  const [open, setOpen] = useState(true)
+  // Projects can carry several cameras with the same name. Number the
+  // duplicates for display only; the stored name is untouched.
+  const nameCounts = new Map<string, number>()
+  for (const camera of cameras) {
+    nameCounts.set(camera.name, (nameCounts.get(camera.name) ?? 0) + 1)
+  }
+  const seen = new Map<string, number>()
+  const displayNames = cameras.map((camera) => {
+    if ((nameCounts.get(camera.name) ?? 0) < 2) return camera.name
+    const index = (seen.get(camera.name) ?? 0) + 1
+    seen.set(camera.name, index)
+    return `${camera.name} ${index}`
+  })
   return (
-    <div className="mb-1 border-b border-border pb-1">
-      <div className="flex h-6 items-center px-3">
-        <span className="text-[11px] font-medium text-text-muted">
-          Cameras
-        </span>
-        <span className="ml-1.5 rounded bg-panel-raised px-1 text-[9px] tabular-nums text-text-dim">
+    <div className="mt-1 border-t border-border pt-1">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex h-6 w-full items-center gap-1 px-3 text-left text-text-muted hover:text-text"
+      >
+        <svg
+          viewBox="0 0 16 16"
+          width={10}
+          height={10}
+          aria-hidden="true"
+          className={[
+            'shrink-0 transition-transform duration-150 ease-[var(--ease-ui-out)]',
+            open ? '' : '-rotate-90',
+          ].join(' ')}
+        >
+          <path
+            d="M4 6l4 4 4-4"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+        <span className="text-[11px] font-medium">Cameras</span>
+        <span className="ml-0.5 rounded bg-panel-raised px-1 text-[9px] tabular-nums text-text-dim">
           <NumberReadout value={cameras.length} />
         </span>
-      </div>
-      {cameras.map((camera) => (
+      </button>
+      {open ? cameras.map((camera, index) => (
         <CameraRow
           key={camera.id}
           node={camera}
+          displayName={displayNames[index]}
           {...resolveCameraRowIndicators(
             camera.id,
             defaultCameraId,
@@ -594,8 +632,8 @@ function CamerasSection({
           )}
           cameraCount={cameras.length}
         />
-      ))}
-      <AddCameraRow />
+      )) : null}
+      {open ? <AddCameraRow /> : null}
     </div>
   )
 }
@@ -608,11 +646,13 @@ function CamerasSection({
  */
 function CameraRow({
   node,
+  displayName,
   isDefault,
   isProgramNow,
   cameraCount,
 }: {
   node: CameraNode
+  displayName: string
   isDefault: boolean
   isProgramNow: boolean
   cameraCount: number
@@ -781,7 +821,7 @@ function CameraRow({
           className="min-w-0 flex-1 bg-transparent outline-none"
         />
       ) : (
-        <span className="min-w-0 flex-1 truncate">{node.name}</span>
+        <span className="min-w-0 flex-1 truncate">{displayName}</span>
       )}
       <button
         type="button"
@@ -824,6 +864,11 @@ function CameraRow({
           api.setNodeProperty(node.id, 'locked', !node.locked)
         }}
       />
+      {isProgramNow ? (
+        <span className="shrink-0 text-[10px] font-medium text-text-dim">
+          Program
+        </span>
+      ) : null}
       <button
         type="button"
         onClick={(e) => {

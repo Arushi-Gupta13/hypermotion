@@ -58,7 +58,7 @@ export function FigmaPluginSetupButton() {
         className="flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[12px] font-medium text-text-muted hover:bg-panel-raised hover:text-text"
       >
         <Puzzle size={15} />
-        <span className="uppercase">Figma import</span>
+        <span>Figma import</span>
       </button>
       {open && <FigmaPluginSetupModal onClose={close} />}
     </>
@@ -160,7 +160,7 @@ function FigmaPluginSetupModal({ onClose }: { onClose: () => void }) {
       }}
       className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 p-4 outline-none"
     >
-      <div className="w-full max-w-[480px] overflow-hidden rounded-[10px] border border-border-strong bg-panel-raised uppercase shadow-[0_24px_70px_rgba(0,0,0,0.34)]">
+      <div className="w-full max-w-[480px] overflow-hidden rounded-[10px] border border-border-strong bg-panel-raised shadow-[0_24px_70px_rgba(0,0,0,0.34)]">
         <header className="flex items-start justify-between gap-4 border-b border-border px-4 py-3.5">
           <div className="flex min-w-0 items-start gap-2.5">
             <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-panel text-accent">
@@ -170,7 +170,7 @@ function FigmaPluginSetupModal({ onClose }: { onClose: () => void }) {
               <div className="flex items-center gap-2">
                 <h2
                   id="figma-plugin-setup-title"
-                  className="hm-type-dialog-title font-semibold uppercase text-text"
+                  className="hm-type-dialog-title font-medium text-text"
                 >
                   Figma import plugin
                 </h2>
@@ -303,7 +303,7 @@ function SetupStep({
         {icon}
       </span>
       <div className="min-w-0 pt-0.5">
-        <h3 className="hm-type-body font-semibold uppercase text-text">{title}</h3>
+        <h3 className="hm-type-body font-medium text-text">{title}</h3>
         <p className="hm-type-support mt-0.5 text-text-muted">{children}</p>
         {action}
       </div>

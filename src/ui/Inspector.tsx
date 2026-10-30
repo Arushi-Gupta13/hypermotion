@@ -390,6 +390,16 @@ export function Inspector() {
             ) : null}
           </motion.div>
         </AnimatePresence>
+        {/* Camera switching is occasional, so it sits below the Scene fields. */}
+        <div
+          data-timeline-camera-slot
+          data-timeline-selection-surface="1"
+          className={
+            mode === 'properties'
+              ? 'mt-4 space-y-4 empty:hidden'
+              : 'hidden'
+          }
+        />
       </div>
     </aside>
   )
@@ -718,24 +728,27 @@ function SceneDetails({ api, project }: { api: SceneAPI; project: ProjectAPI }) 
             allowEmpty={false}
           />
         </FieldRow>
-        <KeyframeSliderRow
-          label="Width"
-          value={meta.canvas.width}
-          onCommit={(v) => setCanvasSize(v, meta.canvas.height)}
-          min={1}
-          adaptiveSpan={1920}
-          step={1}
-          suffix="px"
-        />
-        <KeyframeSliderRow
-          label="Height"
-          value={meta.canvas.height}
-          onCommit={(v) => setCanvasSize(meta.canvas.width, v)}
-          min={1}
-          adaptiveSpan={1080}
-          step={1}
-          suffix="px"
-        />
+        <div className="grid grid-cols-2 gap-x-2">
+          <KeyframeSliderRow
+            label="Width"
+            value={meta.canvas.width}
+            onCommit={(v) => setCanvasSize(v, meta.canvas.height)}
+            min={1}
+            adaptiveSpan={1920}
+            step={1}
+            suffix="px"
+          />
+          <KeyframeSliderRow
+            label="Height"
+            value={meta.canvas.height}
+            onCommit={(v) => setCanvasSize(meta.canvas.width, v)}
+            min={1}
+            adaptiveSpan={1080}
+            step={1}
+            suffix="px"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-x-2">
         <KeyframeSliderRow
           label="Duration"
           value={activeScene?.duration ?? meta.duration}
@@ -756,13 +769,15 @@ function SceneDetails({ api, project }: { api: SceneAPI; project: ProjectAPI }) 
           label="Frame rate"
           value={meta.frameRate}
           onCommit={(v) =>
-            api.setMeta({ frameRate: Math.max(1, Math.round(v)) })
+            api.setMeta({
+              frameRate: Math.min(240, Math.max(1, Math.round(v))),
+            })
           }
           min={1}
-          max={240}
           step={1}
           suffix="FPS"
         />
+        </div>
       </Section>
 
       {activeSequenceItem ? (

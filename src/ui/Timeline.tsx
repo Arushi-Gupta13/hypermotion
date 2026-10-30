@@ -3085,8 +3085,10 @@ export function Timeline() {
           />
         </div>
       </div>
-      <TimelineInspectorPortal>
+      <TimelineInspectorPortal slot="[data-timeline-camera-slot]">
         <SceneCameraControls />
+      </TimelineInspectorPortal>
+      <TimelineInspectorPortal>
         {(beatAudio?.beatGrid || timelineMode === 'sound') && (
           <>
             {beatAudio?.beatGrid && (
@@ -5403,9 +5405,9 @@ function TimelineTabButton({
       data-timeline-selection-surface="1"
       onClick={onClick}
       className={[
-        'h-5 shrink-0 whitespace-nowrap rounded px-1.5 text-[9px] font-semibold uppercase tracking-[0.04em]',
+        'h-6 shrink-0 whitespace-nowrap rounded px-2 text-[10px] font-medium uppercase tracking-[0.5px]',
         active
-          ? 'bg-accent-soft text-accent'
+          ? 'bg-[var(--af-fill)] text-text'
           : 'text-text-muted hover:bg-panel-raised hover:text-text',
       ].join(' ')}
     >
@@ -6354,9 +6356,9 @@ function CameraTrackGroupLeftRow({
       className={[
         'flex h-7 items-center border-t px-2',
         program
-          ? 'border-accent/35 bg-accent-soft/55 text-accent'
+          ? 'border-accent/35 bg-accent-soft/55 text-text'
           : selected
-            ? 'border-border/60 bg-accent-soft/35 text-accent'
+            ? 'border-border/60 bg-accent-soft/35 text-text'
             : 'border-border/60 bg-panel-raised/45 text-text',
       ].join(' ')}
     >

@@ -209,14 +209,6 @@ export function FloatingDock() {
               ].join(' ')}
             >
               {t.icon}
-              <span
-                className={[
-                  'pointer-events-none absolute right-[3px] bottom-[2px] font-mono text-[8px] leading-none tabular-nums',
-                  active ? 'text-white/70' : 'text-text-dim',
-                ].join(' ')}
-              >
-                {t.shortcut}
-              </span>
             </button>
           </span>
         )

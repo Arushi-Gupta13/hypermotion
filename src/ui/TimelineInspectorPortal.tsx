@@ -12,14 +12,17 @@ const TIMELINE_PROPERTIES_SELECTOR = '[data-timeline-properties-slot]'
  */
 export function TimelineInspectorPortal({
   children,
+  slot = TIMELINE_PROPERTIES_SELECTOR,
 }: {
   children: ReactNode
+  /** CSS selector of the Inspector slot to render into. */
+  slot?: string
 }) {
   const [target, setTarget] = useState<Element | null>(null)
 
   useEffect(() => {
     const resolveTarget = () => {
-      const next = document.querySelector(TIMELINE_PROPERTIES_SELECTOR)
+      const next = document.querySelector(slot)
       setTarget((current) => (current === next ? current : next))
     }
 
@@ -27,7 +30,7 @@ export function TimelineInspectorPortal({
     const observer = new MutationObserver(resolveTarget)
     observer.observe(document.body, { childList: true, subtree: true })
     return () => observer.disconnect()
-  }, [])
+  }, [slot])
 
   return target ? createPortal(children, target) : null
 }
