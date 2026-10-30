@@ -649,6 +649,11 @@ export const AI_TOOLS: AiTool[] = [
   previewAnimation,
 ]
 
+/** Names of tools that change the scene (everything else only reads or previews). */
+export const MUTATING_TOOL_NAMES: ReadonlySet<string> = new Set(
+  AI_TOOLS.filter((tool) => tool.mutates).map((tool) => tool.name),
+)
+
 export function listAiToolDefinitions() {
   return AI_TOOLS.map(({ name, description, inputSchema, mutates }) => ({
     name,

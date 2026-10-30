@@ -25,8 +25,6 @@ type ProviderStatus =
 
 type AssistantStatus = Record<AiProvider, ProviderStatus>
 
-const CUSTOM_MODEL = '__custom__'
-
 function useAssistantStatus(): AssistantStatus | null {
   const [status, setStatus] = useState<AssistantStatus | null>(null)
   useEffect(() => {
@@ -69,10 +67,6 @@ export function AssistantPanel() {
   const selection = useUI((s) => s.selection)
   const status = useAssistantStatus()
   const provider = useAssistant((s) => s.provider)
-  const model = useAssistant((s) => s.models[s.provider])
-  const setProvider = useAssistant((s) => s.setProvider)
-  const setModel = useAssistant((s) => s.setModel)
-  const [customOpen, setCustomOpen] = useState(false)
 
   const [draft, setDraft] = useState('')
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -141,20 +135,6 @@ export function AssistantPanel() {
   const empty = transcript.entries.length === 0
   const current = status?.[provider] ?? null
   const unavailable = current !== null && !current.available
-  const modelOptions: ModelOption[] = current
-    ? [
-        {
-          id: '',
-          label:
-            provider === 'codex' && current.defaultModel
-              ? `Default (${current.defaultModel})`
-              : 'Default',
-        },
-        ...current.models.filter((option) => option.id !== ''),
-      ]
-    : [{ id: '', label: 'Default' }]
-  const knownModel = modelOptions.some((option) => option.id === model)
-  const selectValue = customOpen || !knownModel ? CUSTOM_MODEL : model
 
   return (
     <aside
@@ -194,66 +174,6 @@ export function AssistantPanel() {
         </button>
       </header>
 
-      <div className="shrink-0 border-b border-border px-3 py-2">
-        <div className="flex gap-2">
-          <select
-            value={provider}
-            onChange={(event) => {
-              setCustomOpen(false)
-              setProvider(event.target.value as AiProvider)
-            }}
-            disabled={running}
-            aria-label="AI provider"
-            title="Which signed-in app runs the assistant"
-            className="h-7 min-w-0 flex-1 rounded-[var(--radius-control)] bg-control px-2 text-[12px] text-text shadow-[var(--shadow-control)] outline-none focus-visible:ring-2 focus-visible:ring-accent/45 disabled:opacity-50"
-          >
-            {(Object.keys(PROVIDER_LABELS) as AiProvider[]).map((id) => (
-              <option key={id} value={id}>
-                {PROVIDER_LABELS[id]}
-                {status && !status[id].available ? ' (not installed)' : ''}
-              </option>
-            ))}
-          </select>
-          <select
-            value={selectValue}
-            onChange={(event) => {
-              if (event.target.value === CUSTOM_MODEL) {
-                setCustomOpen(true)
-              } else {
-                setCustomOpen(false)
-                setModel(event.target.value)
-              }
-            }}
-            disabled={running}
-            aria-label="Model"
-            className="h-7 min-w-0 flex-1 rounded-[var(--radius-control)] bg-control px-2 text-[12px] text-text shadow-[var(--shadow-control)] outline-none focus-visible:ring-2 focus-visible:ring-accent/45 disabled:opacity-50"
-          >
-            {modelOptions.map((option) => (
-              <option key={option.id || 'default'} value={option.id}>
-                {option.label}
-              </option>
-            ))}
-            <option value={CUSTOM_MODEL}>Custom…</option>
-          </select>
-        </div>
-        {selectValue === CUSTOM_MODEL ? (
-          <input
-            value={model}
-            onChange={(event) => setModel(event.target.value)}
-            onKeyDown={(event) => event.stopPropagation()}
-            placeholder={provider === 'codex' ? 'Model id, e.g. gpt-5.6-terra' : 'Model id, e.g. claude-opus-5-5'}
-            aria-label="Custom model id"
-            spellCheck={false}
-            className="mt-2 h-7 w-full rounded-[var(--radius-control)] bg-control px-2 font-mono text-[12px] text-text shadow-[var(--shadow-control)] outline-none placeholder:text-text-dim focus-visible:ring-2 focus-visible:ring-accent/45"
-          />
-        ) : null}
-        {provider === 'codex' ? (
-          <p className="mt-1.5 text-[11px] leading-4 text-text-dim">
-            Uses your ChatGPT sign-in through the Codex CLI. Beta: not yet verified with live tool calls.
-          </p>
-        ) : null}
-      </div>
-
       <div
         ref={scrollRef}
         onScroll={(event) => {
@@ -282,13 +202,31 @@ export function AssistantPanel() {
           className="shrink-0 border-t border-border bg-panel-raised px-3 py-2.5"
         >
           <div className="mb-2 text-[12px] text-text">
-            Changed the scene
-            <span className="text-text-dim">
-              {' '}
-              · {review.depthAfter - review.depthBefore} step
-              {review.depthAfter - review.depthBefore === 1 ? '' : 's'}, already on the canvas
-            </span>
+            {review.changes.length > 0
+              ? `Changed the animation of ${review.changes.length} layer${review.changes.length === 1 ? '' : 's'}`
+              : 'Changed the scene'}
+            <span className="text-text-dim"> · already on the canvas</span>
           </div>
+          {review.changes.length > 0 ? (
+            <div className="mb-2 flex flex-wrap gap-1">
+              {review.changes.slice(0, 8).map((change) => (
+                <button
+                  key={change.nodeId}
+                  type="button"
+                  disabled={!change.present}
+                  onClick={() => useUI.getState().setSelection([change.nodeId])}
+                  title={`${change.properties.join(', ')}${change.present ? ' (click to select)' : ' (removed)'}`}
+                  className="max-w-full truncate rounded bg-control px-1.5 py-0.5 text-[11px] text-text-muted shadow-[var(--shadow-control)] hover:bg-control-hover hover:text-text disabled:line-through disabled:opacity-60"
+                >
+                  {change.name}
+                  <span className="text-text-dim"> · {change.tracks}</span>
+                </button>
+              ))}
+              {review.changes.length > 8 ? (
+                <span className="px-1 py-0.5 text-[11px] text-text-dim">+{review.changes.length - 8} more</span>
+              ) : null}
+            </div>
+          ) : null}
           <div className="flex gap-1.5">
             <button
               type="button"
@@ -321,6 +259,14 @@ export function AssistantPanel() {
       ) : null}
 
       <div className="shrink-0 border-t border-border p-3">
+        <div className="mb-2 flex items-center gap-2">
+          <ModelMenu status={status} />
+          {provider === 'codex' ? (
+            <span className="text-[10px] text-text-dim" title="Works through the Codex CLI; not yet verified with live tool calls.">
+              Beta
+            </span>
+          ) : null}
+        </div>
         {selectedNames.length > 0 ? (
           <div className="mb-2 flex items-center gap-1.5 text-[11px] text-text-dim">
             <span>Working on</span>
@@ -330,7 +276,7 @@ export function AssistantPanel() {
             </span>
           </div>
         ) : null}
-        <div className="flex items-end gap-2">
+        <div className="relative">
           <textarea
             ref={inputRef}
             value={draft}
@@ -351,26 +297,43 @@ export function AssistantPanel() {
                 : 'Describe the animation you want…'
             }
             aria-label="Message the assistant"
-            className="max-h-40 min-h-[52px] flex-1 resize-none rounded-[var(--radius-control)] bg-control px-2.5 py-2 text-[13px] leading-5 text-text shadow-[var(--shadow-control)] outline-none placeholder:text-text-dim focus-visible:ring-2 focus-visible:ring-accent/45 disabled:opacity-50"
+            // Right padding leaves room for the send button inside the box.
+            className="block max-h-40 min-h-[64px] w-full resize-none rounded-[var(--radius-panel)] bg-control py-2.5 pl-3 pr-12 text-[13px] leading-5 text-text shadow-[var(--shadow-control)] outline-none placeholder:text-text-dim focus-visible:ring-2 focus-visible:ring-accent/45 disabled:opacity-50"
           />
           {running ? (
             <button
               type="button"
               onClick={() => void stop()}
-              className="hm-secondary-action h-8 shrink-0 px-3 text-[12px]"
+              aria-label="Stop generating"
               title="Stop generating"
+              className="absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-full bg-[var(--af-solid)] text-[var(--af-on-solid)] transition-colors hover:bg-[var(--af-solid-hover)]"
             >
-              Stop
+              <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+                <rect x="3" y="3" width="10" height="10" rx="2" fill="currentColor" />
+              </svg>
             </button>
           ) : (
             <button
               type="button"
               onClick={submit}
               disabled={!draft.trim() || unavailable}
-              className="hm-primary-action h-8 shrink-0 px-3 text-[12px] disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="Send message"
               title="Send (Enter)"
+              className="absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-full bg-[var(--af-solid)] text-[var(--af-on-solid)] transition-[background-color,opacity] duration-150 ease-[var(--ease-ui-out)] hover:bg-[var(--af-solid-hover)] disabled:cursor-not-allowed disabled:opacity-30"
             >
-              Send
+              <svg
+                viewBox="0 0 16 16"
+                width="16"
+                height="16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M8 13V3.5M3.75 7.5 8 3.25l4.25 4.25" />
+              </svg>
             </button>
           )}
         </div>
@@ -380,6 +343,148 @@ export function AssistantPanel() {
         </div>
       </div>
     </aside>
+  )
+}
+
+const PROVIDER_ORDER: AiProvider[] = ['claude', 'codex']
+const PROVIDER_SUBTITLE: Record<AiProvider, string> = {
+  claude: 'Claude Code',
+  codex: 'ChatGPT via Codex CLI',
+}
+
+/** Compact "Claude · Sonnet 5.5" chip; the menu lists every model of both providers. */
+function ModelMenu({ status }: { status: AssistantStatus | null }) {
+  const provider = useAssistant((s) => s.provider)
+  const models = useAssistant((s) => s.models)
+  const setProvider = useAssistant((s) => s.setProvider)
+  const setModel = useAssistant((s) => s.setModel)
+  const [open, setOpen] = useState(false)
+  const [customFor, setCustomFor] = useState<AiProvider | null>(null)
+  const [customDraft, setCustomDraft] = useState('')
+  const rootRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('pointerdown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('pointerdown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  const optionsFor = (id: AiProvider): ModelOption[] => {
+    const entry = status?.[id]
+    const known = (entry?.models ?? []).filter((option) => option.id !== '')
+    const defaultLabel =
+      id === 'codex' && entry?.defaultModel ? `Default (${entry.defaultModel})` : 'Default'
+    return [{ id: '', label: defaultLabel }, ...known]
+  }
+
+  const labelOf = (id: AiProvider, model: string): string =>
+    optionsFor(id).find((option) => option.id === model)?.label ?? model
+
+  const choose = (id: AiProvider, model: string) => {
+    setProvider(id)
+    setModel(model)
+    setCustomFor(null)
+    setOpen(false)
+  }
+
+  const currentLabel = labelOf(provider, models[provider])
+
+  return (
+    <div ref={rootRef} className="relative min-w-0">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        title="Choose the AI and model"
+        className="flex h-7 max-w-full items-center gap-1.5 rounded-[var(--radius-control)] bg-control px-2 text-[12px] text-text shadow-[var(--shadow-control)] hover:bg-control-hover focus-visible:ring-2 focus-visible:ring-accent/45"
+      >
+        <span className="font-medium">{PROVIDER_LABELS[provider]}</span>
+        <span className="min-w-0 truncate text-text-muted">{currentLabel}</span>
+        <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true" className="shrink-0 text-text-dim">
+          <path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {open ? (
+        <div
+          role="listbox"
+          aria-label="Models"
+          className="hm-popover-surface absolute bottom-full left-0 z-30 mb-2 max-h-[60vh] w-[280px] overflow-y-auto border border-border-strong p-1"
+        >
+          {PROVIDER_ORDER.map((id) => {
+            const entry = status?.[id]
+            const missing = entry !== undefined && !entry.available
+            return (
+              <div key={id} className="pb-1">
+                <div className="flex items-baseline gap-2 px-2 pb-1 pt-2">
+                  <span className="text-[11px] font-medium text-text">{PROVIDER_LABELS[id]}</span>
+                  <span className="text-[10px] text-text-dim">
+                    {missing ? `${PROVIDER_SUBTITLE[id]} · not installed` : PROVIDER_SUBTITLE[id]}
+                  </span>
+                </div>
+                {optionsFor(id).map((option) => {
+                  const selected = provider === id && models[id] === option.id
+                  return (
+                    <button
+                      key={option.id || 'default'}
+                      type="button"
+                      role="option"
+                      aria-selected={selected}
+                      onClick={() => choose(id, option.id)}
+                      className="flex w-full items-center gap-2 rounded-[var(--radius-compact)] px-2 py-1.5 text-left text-[12px] text-text-muted hover:bg-control hover:text-text"
+                    >
+                      <span className="w-3 shrink-0 text-accent">{selected ? '✓' : ''}</span>
+                      <span className="min-w-0 truncate">{option.label}</span>
+                    </button>
+                  )
+                })}
+                {customFor === id ? (
+                  <input
+                    autoFocus
+                    value={customDraft}
+                    onChange={(event) => setCustomDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      event.stopPropagation()
+                      if (event.key === 'Enter' && customDraft.trim()) choose(id, customDraft.trim())
+                    }}
+                    placeholder={id === 'codex' ? 'Model id, then Enter' : 'e.g. claude-opus-5-5, then Enter'}
+                    aria-label={`Custom ${PROVIDER_LABELS[id]} model id`}
+                    spellCheck={false}
+                    className="mx-2 mb-1 mt-0.5 h-7 w-[calc(100%-1rem)] rounded-[var(--radius-control)] bg-control px-2 font-mono text-[11px] text-text outline-none placeholder:text-text-dim focus-visible:ring-2 focus-visible:ring-accent/45"
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustomFor(id)
+                      setCustomDraft(
+                        provider === id && !optionsFor(id).some((option) => option.id === models[id])
+                          ? models[id]
+                          : '',
+                      )
+                    }}
+                    className="flex w-full items-center gap-2 rounded-[var(--radius-compact)] px-2 py-1.5 text-left text-[12px] text-text-dim hover:bg-control hover:text-text"
+                  >
+                    <span className="w-3 shrink-0" />
+                    Other model id…
+                  </button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      ) : null}
+    </div>
   )
 }
 

@@ -70,3 +70,64 @@ describe('assistant provider and model selection', () => {
     expect((notices.at(-1) as { text: string }).text).toContain('Switched to ChatGPT')
   })
 })
+
+describe('what a finished turn reports', () => {
+  beforeEach(() => {
+    invoke.mockReset()
+    invoke.mockResolvedValue({ turnId: 'turn-1' })
+    resetStore()
+  })
+
+  async function scene() {
+    const { createSceneAPI } = await import('@/scene/doc')
+    const { addKeyframe } = await import('@/anim/tracks')
+    const { registerSceneProbe, snapshotTracks } = await import('@/ai/sceneProbe')
+    const { useUI } = await import('@/state/ui')
+    const api = createSceneAPI()
+    const root = api.createNode('frame', null, { name: 'Scene' })
+    const title = api.createNode('rect', root, { name: 'Title' })
+    registerSceneProbe(() => snapshotTracks(api))
+    useUI.getState().clearSelection()
+    return { api, title, addKeyframe, useUI }
+  }
+
+  const toolDone = (name: string) => [
+    { type: 'assistant', message: { content: [{ type: 'tool_use', id: 't', name: `mcp__canvas__${name}`, input: {} }] } },
+    { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't', content: 'ok' }] } },
+  ]
+
+  it('lists the layers whose animation really changed, and selects them', async () => {
+    const { title, api, addKeyframe, useUI } = await scene()
+    await useAssistant.getState().send('fade the title in')
+    addKeyframe(api, title, 'appearance.opacity', 0, 0)
+    addKeyframe(api, title, 'appearance.opacity', 0.5, 1)
+    await finishTurn('s')
+
+    const review = useAssistant.getState().review
+    expect(review?.changes).toEqual([
+      { nodeId: title, name: 'Title', tracks: 1, properties: ['appearance.opacity'], present: true },
+    ])
+    expect(useUI.getState().selection).toEqual([title])
+  })
+
+  it('says so when edit tools ran but the scene did not change', async () => {
+    await scene()
+    await useAssistant.getState().send('fade the title in')
+    const turnId = useAssistant.getState().turnId!
+    for (const event of toolDone('animate_nodes')) useAssistant.getState().onClaudeEvent(turnId, event)
+    useAssistant.getState().onTurnDone({ turnId, code: 0, stopped: false, stderr: '' })
+
+    expect(useAssistant.getState().review).toBeNull()
+    const notices = useAssistant.getState().transcript.entries.filter((e) => e.kind === 'notice')
+    expect((notices.at(-1) as { text: string }).text).toContain('nothing in the scene changed')
+  })
+
+  it('stays quiet for a read-only question', async () => {
+    await scene()
+    await useAssistant.getState().send('what is selected?')
+    const turnId = useAssistant.getState().turnId!
+    for (const event of toolDone('get_scene')) useAssistant.getState().onClaudeEvent(turnId, event)
+    useAssistant.getState().onTurnDone({ turnId, code: 0, stopped: false, stderr: '' })
+    expect(useAssistant.getState().transcript.entries.some((e) => e.kind === 'notice')).toBe(false)
+  })
+})

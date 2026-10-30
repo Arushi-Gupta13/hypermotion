@@ -5,11 +5,20 @@ import {
   addNotice,
   addUserEntry,
   applyClaudeEvent,
+  displayToolName,
   emptyTranscript,
   settleTranscript,
   type TranscriptState,
 } from '@/ai/transcript'
 import { closeUndoCapture, undoDepth, undoToDepth } from '@/ai/undoBridge'
+import {
+  diffSnapshots,
+  readSceneTracks,
+  type SceneChange,
+  type TrackSnapshot,
+} from '@/ai/sceneProbe'
+import { MUTATING_TOOL_NAMES } from '@/ai/tools'
+import { useUI } from '@/state/ui'
 
 export const ASSISTANT_SYSTEM_PROMPT = `You are the motion-design assistant built into Hypermotion, a motion editor. You work ONLY through the canvas tools, which act on the user's open scene: every change appears on the canvas and timeline immediately and the user can undo it.
 
@@ -60,6 +69,8 @@ interface TurnReview {
   /** Undo-stack depth when the turn ended. */
   depthAfter: number
   prompt: string
+  /** Layers whose animation this turn changed, taken from the scene itself. */
+  changes: SceneChange[]
 }
 
 interface AssistantState {
@@ -77,7 +88,12 @@ interface AssistantState {
   running: boolean
   turnId: string | null
   /** Set while a turn is running: where to undo back to. */
-  turnBaseline: { depthBefore: number; prompt: string } | null
+  turnBaseline: {
+    depthBefore: number
+    prompt: string
+    tracksBefore: TrackSnapshot | null
+    entriesBefore: number
+  } | null
   /** Set after a turn that changed the scene, until the user decides. */
   review: TurnReview | null
   setOpen: (open: boolean) => void
@@ -197,7 +213,12 @@ export const useAssistant = create<AssistantState>((set, get) => ({
         running: true,
         review: null,
         turnProvider: provider,
-        turnBaseline: { depthBefore, prompt },
+        turnBaseline: {
+          depthBefore,
+          prompt,
+          tracksBefore: readSceneTracks(),
+          entriesBefore: transcript.entries.length,
+        },
         transcript: addUserEntry(transcript, nextId('user'), prompt),
       }
     })
@@ -285,6 +306,13 @@ export const useAssistant = create<AssistantState>((set, get) => ({
     closeUndoCapture()
     const baseline = get().turnBaseline
     const depthAfter = undoDepth()
+    const tracksAfter = readSceneTracks()
+    const changes =
+      baseline?.tracksBefore && tracksAfter ? diffSnapshots(baseline.tracksBefore, tracksAfter) : []
+    const changed = baseline !== null && (depthAfter > baseline.depthBefore || changes.length > 0)
+    // Show the user what changed: select the layers whose animation was edited.
+    const present = changes.filter((change) => change.present).map((change) => change.nodeId)
+    if (present.length > 0) useUI.getState().setSelection(present)
     set((s) => {
       let transcript = settleTranscript(s.transcript)
       if (stopped) {
@@ -296,8 +324,26 @@ export const useAssistant = create<AssistantState>((set, get) => ({
           'error',
           stderr || `Claude Code exited with code ${code ?? 'unknown'}.`,
         )
+      } else if (baseline && !changed) {
+        // The model said it edited the scene but the scene is unchanged: say so,
+        // rather than letting the user assume something happened.
+        const tried = transcript.entries
+          .slice(baseline.entriesBefore)
+          .some(
+            (entry) =>
+              entry.kind === 'tool' &&
+              entry.status === 'done' &&
+              MUTATING_TOOL_NAMES.has(displayToolName(entry.name)),
+          )
+        if (tried) {
+          transcript = addNotice(
+            transcript,
+            nextId('notice'),
+            'info',
+            'The assistant ran edit tools, but nothing in the scene changed.',
+          )
+        }
       }
-      const changed = baseline !== null && depthAfter > baseline.depthBefore
       return {
         running: false,
         turnId: null,
@@ -307,7 +353,7 @@ export const useAssistant = create<AssistantState>((set, get) => ({
         transcript,
         review:
           changed && baseline
-            ? { depthBefore: baseline.depthBefore, depthAfter, prompt: baseline.prompt }
+            ? { depthBefore: baseline.depthBefore, depthAfter, prompt: baseline.prompt, changes }
             : null,
       }
     })

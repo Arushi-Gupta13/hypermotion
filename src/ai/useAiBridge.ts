@@ -5,6 +5,7 @@ import { useSceneAPI } from '@/scene/hooks'
 import { useUI } from '@/state/ui'
 import { useAssistant } from '@/ai/store'
 import { listAiToolDefinitions, runAiTool, type AiToolContext } from '@/ai/tools'
+import { registerSceneProbe, snapshotTracks } from '@/ai/sceneProbe'
 
 interface RpcRequest {
   requestId: string
@@ -24,6 +25,12 @@ export function useAiBridge(): void {
   useEffect(() => {
     apiRef.current = api
   }, [api])
+
+  // Lets the store compare the scene before and after a turn.
+  useEffect(() => {
+    registerSceneProbe(() => snapshotTracks(apiRef.current))
+    return () => registerSceneProbe(null)
+  }, [])
 
   useEffect(() => {
     const bridge = window.hypermotion
